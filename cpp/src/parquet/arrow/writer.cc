@@ -23,6 +23,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include <iostream>
 
 #include "arrow/array.h"
 #include "arrow/extension_type.h"
@@ -34,6 +35,7 @@
 #include "arrow/util/key_value_metadata.h"
 #include "arrow/util/logging.h"
 #include "arrow/util/make_unique.h"
+#include "arrow/visitor_inline.h"
 
 #include "parquet/arrow/path_internal.h"
 #include "parquet/arrow/reader_internal.h"
@@ -331,6 +333,7 @@ class FileWriterImpl : public FileWriter {
       chunk_size = this->properties().max_row_group_length();
     }
 
+    // std::cout << "WriteTable1, chunk_size: " << chunk_size << ", num rows: " << table.num_rows() << ", max row group: " << this->properties().max_row_group_length() << std::endl;
     auto WriteRowGroup = [&](int64_t offset, int64_t size) {
       RETURN_NOT_OK(NewRowGroup(size));
       for (int i = 0; i < table.num_columns(); i++) {
@@ -347,6 +350,7 @@ class FileWriterImpl : public FileWriter {
 
     for (int chunk = 0; chunk * chunk_size < table.num_rows(); chunk++) {
       int64_t offset = chunk * chunk_size;
+      // std::cout << "WriteRowGroup, offset " << offset << " size: " << std::min(chunk_size, table.num_rows() - offset) << std::endl;
       RETURN_NOT_OK_ELSE(
           WriteRowGroup(offset, std::min(chunk_size, table.num_rows() - offset)),
           PARQUET_IGNORE_NOT_OK(Close()));

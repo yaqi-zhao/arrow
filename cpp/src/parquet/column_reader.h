@@ -25,18 +25,21 @@
 #include "parquet/exception.h"
 #include "parquet/level_conversion.h"
 #include "parquet/platform.h"
-#include "parquet/properties.h"
 #include "parquet/schema.h"
 #include "parquet/types.h"
+#ifdef ENABLE_QPL_ANALYSIS
+#include <qpl/qpl.hpp>
+#include <qpl/qpl.h>
+#endif
 
 namespace arrow {
 
 class Array;
 class ChunkedArray;
 
-namespace bit_util {
+namespace BitUtil {
 class BitReader;
-}  // namespace bit_util
+}  // namespace BitUtil
 
 namespace util {
 class RleDecoder;
@@ -76,7 +79,7 @@ class PARQUET_EXPORT LevelDecoder {
   int num_values_remaining_;
   Encoding::type encoding_;
   std::unique_ptr<::arrow::util::RleDecoder> rle_decoder_;
-  std::unique_ptr<::arrow::bit_util::BitReader> bit_packed_decoder_;
+  std::unique_ptr<::arrow::BitUtil::BitReader> bit_packed_decoder_;
   int16_t max_level_;
 };
 
@@ -107,10 +110,6 @@ class PARQUET_EXPORT PageReader {
       std::shared_ptr<ArrowInputStream> stream, int64_t total_num_rows,
       Compression::type codec, ::arrow::MemoryPool* pool = ::arrow::default_memory_pool(),
       const CryptoContext* ctx = NULLPTR);
-  static std::unique_ptr<PageReader> Open(std::shared_ptr<ArrowInputStream> stream,
-                                          int64_t total_num_rows, Compression::type codec,
-                                          const ReaderProperties& properties,
-                                          const CryptoContext* ctx = NULLPTR);
 
   // @returns: shared_ptr<Page>(nullptr) on EOS, std::shared_ptr<Page>
   // containing new Page otherwise
@@ -271,6 +270,14 @@ class RecordReader {
   /// \return number of records read
   virtual int64_t ReadRecords(int64_t num_records) = 0;
 
+#ifdef ENABLE_QPL_ANALYSIS
+  virtual int64_t ReadRecordsAsync(int64_t num_records, size_t row_group_index) = 0;
+  virtual void InitAsyncVector(int64_t capacity) = 0;
+  virtual std::vector<qpl_job*> & GetQplJobs() = 0;
+  virtual std::vector<std::vector<uint8_t>*> & GetDestinations() = 0;
+  virtual void FillOutData(size_t row_group_idx, int64_t records_read) = 0;
+  virtual void FreeAsyncVector(int64_t capacity) = 0;
+#endif
   /// \brief Pre-allocate space for data. Results in better flat read performance
   virtual void Reserve(int64_t num_values) = 0;
 

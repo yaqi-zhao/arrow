@@ -38,7 +38,7 @@
 #include "arrow/util/bit_util.h"
 #include "arrow/util/checked_cast.h"
 #include "arrow/util/compression.h"
-#include "arrow/util/int_util_overflow.h"
+#include "arrow/util/int_util_internal.h"
 #include "arrow/util/logging.h"
 #include "arrow/util/rle_encoding.h"
 #include "parquet/column_page.h"
@@ -50,14 +50,16 @@
 #include "parquet/properties.h"
 #include "parquet/statistics.h"
 #include "parquet/thrift_internal.h"  // IWYU pragma: keep
-#include "parquet/windows_fixup.h"    // for OPTIONAL
+// Required after "arrow/util/int_util_internal.h" (for OPTIONAL)
+#include "parquet/windows_compatibility.h"
+using namespace std;
 
 using arrow::MemoryPool;
 using arrow::internal::AddWithOverflow;
 using arrow::internal::checked_cast;
 using arrow::internal::MultiplyWithOverflow;
 
-namespace bit_util = arrow::bit_util;
+namespace BitUtil = arrow::BitUtil;
 
 namespace parquet {
 namespace {
@@ -78,15 +80,6 @@ inline bool HasSpacedValues(const ColumnDescriptor* descr) {
     return false;
   }
 }
-
-// Throws exception if number_decoded does not match expected.
-inline void CheckNumberDecoded(int64_t number_decoded, int64_t expected) {
-  if (ARROW_PREDICT_FALSE(number_decoded != expected)) {
-    ParquetException::EofException("Decoded values " + std::to_string(number_decoded) +
-                                   " does not match expected " +
-                                   std::to_string(expected));
-  }
-}
 }  // namespace
 
 LevelDecoder::LevelDecoder() : num_values_remaining_(0) {}
@@ -100,7 +93,7 @@ int LevelDecoder::SetData(Encoding::type encoding, int16_t max_level,
   int32_t num_bytes = 0;
   encoding_ = encoding;
   num_values_remaining_ = num_buffered_values;
-  bit_width_ = bit_util::Log2(max_level + 1);
+  bit_width_ = BitUtil::Log2(max_level + 1);
   switch (encoding) {
     case Encoding::RLE: {
       if (data_size < 4) {
@@ -125,12 +118,12 @@ int LevelDecoder::SetData(Encoding::type encoding, int16_t max_level,
         throw ParquetException(
             "Number of buffered values too large (corrupt data page?)");
       }
-      num_bytes = static_cast<int32_t>(bit_util::BytesForBits(num_bits));
+      num_bytes = static_cast<int32_t>(BitUtil::BytesForBits(num_bits));
       if (num_bytes < 0 || num_bytes > data_size - 4) {
         throw ParquetException("Received invalid number of bytes (corrupt data page?)");
       }
       if (!bit_packed_decoder_) {
-        bit_packed_decoder_.reset(new ::arrow::bit_util::BitReader(data, num_bytes));
+        bit_packed_decoder_.reset(new ::arrow::BitUtil::BitReader(data, num_bytes));
       } else {
         bit_packed_decoder_->Reset(data, num_bytes);
       }
@@ -152,7 +145,7 @@ void LevelDecoder::SetDataV2(int32_t num_bytes, int16_t max_level,
   }
   encoding_ = Encoding::RLE;
   num_values_remaining_ = num_buffered_values;
-  bit_width_ = bit_util::Log2(max_level + 1);
+  bit_width_ = BitUtil::Log2(max_level + 1);
 
   if (!rle_decoder_) {
     rle_decoder_.reset(new ::arrow::util::RleDecoder(data, num_bytes, bit_width_));
@@ -223,15 +216,14 @@ EncodedStatistics ExtractStatsFromHeader(const H& header) {
 class SerializedPageReader : public PageReader {
  public:
   SerializedPageReader(std::shared_ptr<ArrowInputStream> stream, int64_t total_num_rows,
-                       Compression::type codec, const ReaderProperties& properties,
+                       Compression::type codec, ::arrow::MemoryPool* pool,
                        const CryptoContext* crypto_ctx)
-      : properties_(properties),
-        stream_(std::move(stream)),
-        decompression_buffer_(AllocateBuffer(properties_.memory_pool(), 0)),
+      : stream_(std::move(stream)),
+        decompression_buffer_(AllocateBuffer(pool, 0)),
         page_ordinal_(0),
         seen_num_rows_(0),
         total_num_rows_(total_num_rows),
-        decryption_buffer_(AllocateBuffer(properties_.memory_pool(), 0)) {
+        decryption_buffer_(AllocateBuffer(pool, 0)) {
     if (crypto_ctx != nullptr) {
       crypto_ctx_ = *crypto_ctx;
       InitDecryption();
@@ -255,7 +247,6 @@ class SerializedPageReader : public PageReader {
                                              int compressed_len, int uncompressed_len,
                                              int levels_byte_len = 0);
 
-  const ReaderProperties properties_;
   std::shared_ptr<ArrowInputStream> stream_;
 
   format::PageHeader current_page_header_;
@@ -328,10 +319,9 @@ void SerializedPageReader::UpdateDecryption(const std::shared_ptr<Decryptor>& de
 }
 
 std::shared_ptr<Page> SerializedPageReader::NextPage() {
-  ThriftDeserializer deserializer(properties_);
-
   // Loop here because there may be unhandled page types that we skip until
   // finding a page that we do know what to do with
+
   while (seen_num_rows_ < total_num_rows_) {
     uint32_t header_size = 0;
     uint32_t allowed_page_size = kDefaultPageHeaderSize;
@@ -352,9 +342,8 @@ std::shared_ptr<Page> SerializedPageReader::NextPage() {
           UpdateDecryption(crypto_ctx_.meta_decryptor, encryption::kDictionaryPageHeader,
                            data_page_header_aad_);
         }
-        deserializer.DeserializeMessage(reinterpret_cast<const uint8_t*>(view.data()),
-                                        &header_size, &current_page_header_,
-                                        crypto_ctx_.meta_decryptor);
+        DeserializeThriftMsg(reinterpret_cast<const uint8_t*>(view.data()), &header_size,
+                             &current_page_header_, crypto_ctx_.meta_decryptor);
         break;
       } catch (std::exception& e) {
         // Failed to deserialize. Double the allowed page header size and try again
@@ -515,19 +504,10 @@ std::shared_ptr<Buffer> SerializedPageReader::DecompressIfNeeded(
 std::unique_ptr<PageReader> PageReader::Open(std::shared_ptr<ArrowInputStream> stream,
                                              int64_t total_num_rows,
                                              Compression::type codec,
-                                             const ReaderProperties& properties,
-                                             const CryptoContext* ctx) {
-  return std::unique_ptr<PageReader>(new SerializedPageReader(
-      std::move(stream), total_num_rows, codec, properties, ctx));
-}
-
-std::unique_ptr<PageReader> PageReader::Open(std::shared_ptr<ArrowInputStream> stream,
-                                             int64_t total_num_rows,
-                                             Compression::type codec,
                                              ::arrow::MemoryPool* pool,
                                              const CryptoContext* ctx) {
-  return std::unique_ptr<PageReader>(new SerializedPageReader(
-      std::move(stream), total_num_rows, codec, ReaderProperties(pool), ctx));
+  return std::unique_ptr<PageReader>(
+      new SerializedPageReader(std::move(stream), total_num_rows, codec, pool, ctx));
 }
 
 namespace {
@@ -564,6 +544,7 @@ class ColumnReaderImplBase {
   //
   // @returns: the number of values read into the out buffer
   int64_t ReadValues(int64_t batch_size, T* out) {
+    // std::cout << "ColumnReaderImplBase::ReadValues, batch_size {" << batch_size << "}"  << std::endl;
     int64_t num_decoded = current_decoder_->Decode(out, static_cast<int>(batch_size));
     return num_decoded;
   }
@@ -645,6 +626,7 @@ class ColumnReaderImplBase {
 
   void ConfigureDictionary(const DictionaryPage* page) {
     int encoding = static_cast<int>(page->encoding());
+    // cout << "ConfigureDictionary: encoding {" << encoding << "}" << endl;
     if (page->encoding() == Encoding::PLAIN_DICTIONARY ||
         page->encoding() == Encoding::PLAIN) {
       encoding = static_cast<int>(Encoding::RLE_DICTIONARY);
@@ -774,6 +756,9 @@ class ColumnReaderImplBase {
     auto it = decoders_.find(static_cast<int>(encoding));
     if (it != decoders_.end()) {
       DCHECK(it->second.get() != nullptr);
+      if (encoding == Encoding::RLE_DICTIONARY) {
+        DCHECK(current_decoder_->encoding() == Encoding::RLE_DICTIONARY);
+      }
       current_decoder_ = it->second.get();
     } else {
       switch (encoding) {
@@ -798,19 +783,9 @@ class ColumnReaderImplBase {
           decoders_[static_cast<int>(encoding)] = std::move(decoder);
           break;
         }
-        case Encoding::DELTA_BYTE_ARRAY: {
-          auto decoder = MakeTypedDecoder<DType>(Encoding::DELTA_BYTE_ARRAY, descr_);
-          current_decoder_ = decoder.get();
-          decoders_[static_cast<int>(encoding)] = std::move(decoder);
-          break;
-        }
-        case Encoding::DELTA_LENGTH_BYTE_ARRAY: {
-          auto decoder =
-              MakeTypedDecoder<DType>(Encoding::DELTA_LENGTH_BYTE_ARRAY, descr_);
-          current_decoder_ = decoder.get();
-          decoders_[static_cast<int>(encoding)] = std::move(decoder);
-          break;
-        }
+        case Encoding::DELTA_LENGTH_BYTE_ARRAY:
+        case Encoding::DELTA_BYTE_ARRAY:
+          ParquetException::NYI("Unsupported encoding");
 
         default:
           throw ParquetException("Unknown encoding type.");
@@ -994,14 +969,6 @@ int64_t TypedColumnReaderImpl<DType>::ReadBatchWithDictionary(
   // Read dictionary indices.
   *indices_read = ReadDictionaryIndices(indices_to_read, indices);
   int64_t total_indices = std::max(num_def_levels, *indices_read);
-  // Some callers use a batch size of 0 just to get the dictionary.
-  int64_t expected_values =
-      std::min(batch_size, this->num_buffered_values_ - this->num_decoded_values_);
-  if (total_indices == 0 && expected_values > 0) {
-    std::stringstream ss;
-    ss << "Read 0 values, expected " << expected_values;
-    ParquetException::EofException(ss.str());
-  }
   this->ConsumeBufferedValues(total_indices);
 
   return total_indices;
@@ -1025,13 +992,6 @@ int64_t TypedColumnReaderImpl<DType>::ReadBatch(int64_t batch_size, int16_t* def
 
   *values_read = this->ReadValues(values_to_read, values);
   int64_t total_values = std::max(num_def_levels, *values_read);
-  int64_t expected_values =
-      std::min(batch_size, this->num_buffered_values_ - this->num_decoded_values_);
-  if (total_values == 0 && expected_values > 0) {
-    std::stringstream ss;
-    ss << "Read 0 values, expected " << expected_values;
-    ParquetException::EofException(ss.str());
-  }
   this->ConsumeBufferedValues(total_values);
 
   return total_values;
@@ -1078,9 +1038,9 @@ int64_t TypedColumnReaderImpl<DType>::ReadBatchSpaced(
         }
       }
       total_values = this->ReadValues(values_to_read, values);
-      ::arrow::bit_util::SetBitsTo(valid_bits, valid_bits_offset,
-                                   /*length=*/total_values,
-                                   /*bits_are_set=*/true);
+      ::arrow::BitUtil::SetBitsTo(valid_bits, valid_bits_offset,
+                                  /*length=*/total_values,
+                                  /*bits_are_set=*/true);
       *values_read = total_values;
     } else {
       internal::LevelInfo info;
@@ -1108,9 +1068,9 @@ int64_t TypedColumnReaderImpl<DType>::ReadBatchSpaced(
   } else {
     // Required field, read all values
     total_values = this->ReadValues(batch_size, values);
-    ::arrow::bit_util::SetBitsTo(valid_bits, valid_bits_offset,
-                                 /*length=*/total_values,
-                                 /*bits_are_set=*/true);
+    ::arrow::BitUtil::SetBitsTo(valid_bits, valid_bits_offset,
+                                /*length=*/total_values,
+                                /*bits_are_set=*/true);
     *null_count_out = 0;
     *values_read = total_values;
     *levels_read = total_values;
@@ -1248,14 +1208,18 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
     return bytes_for_values;
   }
 
-  int64_t ReadRecords(int64_t num_records) override {
+#ifdef ENABLE_QPL_ANALYSIS 
+  int64_t ReadRecordsAsync(int64_t num_records, size_t row_group_index) override {
     // Delimit records, then read values at the end
     int64_t records_read = 0;
 
+    // cout << "ReadRecords: levels_position_ {"  << levels_position_ << "}, levels_written_ {" << levels_written_ << "}" << endl;
     if (levels_position_ < levels_written_) {
-      records_read += ReadRecordData(num_records);
+      records_read += ReadRecordDataAsync(num_records, &(qpl_jobs[row_group_index]), &destinations[row_group_index], &out_ptrs[row_group_index]);
+      // cout << "ReadRecords->ReadRecordData, records_read: " << records_read << endl;
     }
 
+    // cout << "ReadRecords: num_records {" << num_records << "}" << endl;
     int64_t level_batch_size = std::max(kMinLevelBatchSize, num_records);
 
     // If we are in the middle of a record, we continue until reaching the
@@ -1284,6 +1248,84 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
       }
 
       if (this->max_def_level_ > 0) {
+        // cout << "ReadRecords: max_def_level_ bigger than 0, max_def_level_{" << this->max_def_level_ << "}" << endl;
+        ReserveLevels(batch_size);
+
+        int16_t* def_levels = this->def_levels() + levels_written_;
+        int16_t* rep_levels = this->rep_levels() + levels_written_;
+
+        // Not present for non-repeated fields
+        int64_t levels_read = 0;
+        if (this->max_rep_level_ > 0) {
+          levels_read = this->ReadDefinitionLevels(batch_size, def_levels);
+          if (this->ReadRepetitionLevels(batch_size, rep_levels) != levels_read) {
+            throw ParquetException("Number of decoded rep / def levels did not match");
+          }
+        } else if (this->max_def_level_ > 0) {
+          levels_read = this->ReadDefinitionLevels(batch_size, def_levels);
+        }
+
+        // Exhausted column chunk
+        if (levels_read == 0) {
+          break;
+        }
+
+        levels_written_ += levels_read;
+        records_read += ReadRecordDataAsync(num_records - records_read, &(qpl_jobs[row_group_index]), &destinations[row_group_index], &out_ptrs[row_group_index]);
+      } else {
+        // No repetition or definition levels
+        batch_size = std::min(num_records - records_read, batch_size);
+        // cout << "ReadRecords: max_def_level_ less than 0, batch_size {" << batch_size << "}" << endl;
+        records_read += ReadRecordDataAsync(batch_size, &(qpl_jobs[row_group_index]), &destinations[row_group_index], &out_ptrs[row_group_index]);
+      }
+    }
+
+    // cout << "ReadRecords: return records_read {" << records_read << "}" << endl;
+    return records_read;
+  }
+  #endif
+
+
+  int64_t ReadRecords(int64_t num_records) override {
+    // Delimit records, then read values at the end
+    int64_t records_read = 0;
+
+    // cout << "ReadRecords: levels_position_ {"  << levels_position_ << "}, levels_written_ {" << levels_written_ << "}" << endl;
+    if (levels_position_ < levels_written_) {
+      records_read += ReadRecordData(num_records);
+      // cout << "ReadRecords->ReadRecordData, records_read: " << records_read << endl;
+    }
+
+    // cout << "ReadRecords: num_records {" << num_records << "}" << endl;
+    int64_t level_batch_size = std::max(kMinLevelBatchSize, num_records);
+
+    // If we are in the middle of a record, we continue until reaching the
+    // desired number of records or the end of the current record if we've found
+    // enough records
+    while (!at_record_start_ || records_read < num_records) {
+      // Is there more data to read in this row group?
+      if (!this->HasNextInternal()) {
+        if (!at_record_start_) {
+          // We ended the row group while inside a record that we haven't seen
+          // the end of yet. So increment the record count for the last record in
+          // the row group
+          ++records_read;
+          at_record_start_ = true;
+        }
+        break;
+      }
+
+      /// We perform multiple batch reads until we either exhaust the row group
+      /// or observe the desired number of records
+      int64_t batch_size = std::min(level_batch_size, available_values_current_page());
+
+      // No more data in column
+      if (batch_size == 0) {
+        break;
+      }
+
+      if (this->max_def_level_ > 0) {
+        // cout << "ReadRecords: max_def_level_ bigger than 0, max_def_level_{" << this->max_def_level_ << "}" << endl;
         ReserveLevels(batch_size);
 
         int16_t* def_levels = this->def_levels() + levels_written_;
@@ -1310,10 +1352,12 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
       } else {
         // No repetition or definition levels
         batch_size = std::min(num_records - records_read, batch_size);
+        // cout << "ReadRecords: max_def_level_ less than 0, batch_size {" << batch_size << "}" << endl;
         records_read += ReadRecordData(batch_size);
       }
     }
 
+    // cout << "ReadRecords: return records_read {" << records_read << "}" << endl;
     return records_read;
   }
 
@@ -1336,7 +1380,7 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
   std::shared_ptr<ResizableBuffer> ReleaseIsValid() override {
     if (leaf_info_.HasNullableValues()) {
       auto result = valid_bits_;
-      PARQUET_THROW_NOT_OK(result->Resize(bit_util::BytesForBits(values_written_), true));
+      PARQUET_THROW_NOT_OK(result->Resize(BitUtil::BytesForBits(values_written_), true));
       valid_bits_ = AllocateBuffer(this->pool_);
       return result;
     } else {
@@ -1396,6 +1440,51 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
     ReserveValues(capacity);
   }
 
+#ifdef ENABLE_QPL_ANALYSIS
+  void InitAsyncVector(int64_t capacity) override {
+    qpl_jobs.resize(capacity, nullptr);
+    destinations.resize(capacity);
+    out_ptrs.resize(capacity, nullptr);
+  }
+
+  // void FreeAsyncVector(int64_t capacity) override {
+  //   for (size_t i= 0; i < capacity; i++) {
+  //     vector<uint8_t>().swap(*destinations[i]);
+  //     delete destinations[i];
+  //     std::free(qpl_jobs[i]);
+  //   }
+  // }
+
+  void FreeAsyncVector(int64_t capacity) override {
+    vector<uint8_t>().swap(*destinations[capacity]);
+    delete destinations[capacity];
+    std::free(qpl_jobs[capacity]);
+
+    // for (size_t i= 0; i < capacity; i++) {
+    //   vector<uint8_t>().swap(*destinations[i]);
+    //   delete destinations[i];
+    //   std::free(qpl_jobs[i]);
+    // }
+  }
+
+  std::vector<qpl_job*> & GetQplJobs() override {
+    return qpl_jobs;
+  }
+
+  std::vector<std::vector<uint8_t>*> & GetDestinations() override {
+    return destinations;
+  }
+
+  void FillOutData(size_t row_group_idx, int64_t records_read) override {
+    auto out = out_ptrs[row_group_idx];
+    auto destination = destinations[row_group_idx];
+    auto job = qpl_jobs[row_group_idx];
+    return this->current_decoder_->FillDecodedData(out, records_read, destination);
+    // return this->current_decoder_->FillDecodedData(out, job->total_out, destination);
+  }
+
+#endif
+
   int64_t UpdateCapacity(int64_t capacity, int64_t size, int64_t extra_size) {
     if (extra_size < 0) {
       throw ParquetException("Negative size (corrupt file?)");
@@ -1410,7 +1499,7 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
     if (capacity >= target_size) {
       return capacity;
     }
-    return bit_util::NextPower2(target_size);
+    return BitUtil::NextPower2(target_size);
   }
 
   void ReserveLevels(int64_t extra_levels) {
@@ -1445,9 +1534,9 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
       values_capacity_ = new_values_capacity;
     }
     if (leaf_info_.HasNullableValues()) {
-      int64_t valid_bytes_new = bit_util::BytesForBits(values_capacity_);
+      int64_t valid_bytes_new = BitUtil::BytesForBits(values_capacity_);
       if (valid_bits_->size() < valid_bytes_new) {
-        int64_t valid_bytes_old = bit_util::BytesForBits(values_written_);
+        int64_t valid_bytes_old = BitUtil::BytesForBits(values_written_);
         PARQUET_THROW_NOT_OK(valid_bits_->Resize(valid_bytes_new, false));
 
         // Avoid valgrind warnings
@@ -1505,14 +1594,23 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
     int64_t num_decoded = this->current_decoder_->DecodeSpaced(
         ValuesHead<T>(), static_cast<int>(values_with_nulls),
         static_cast<int>(null_count), valid_bits, valid_bits_offset);
-    CheckNumberDecoded(num_decoded, values_with_nulls);
+    DCHECK_EQ(num_decoded, values_with_nulls);
   }
 
-  virtual void ReadValuesDense(int64_t values_to_read) {
-    int64_t num_decoded =
+  virtual void ReadValuesDense(int64_t values_to_read, int64_t & num_decoded) {
+    // cout << "ReadValuesDense call Decode" << endl;
+    num_decoded =
         this->current_decoder_->Decode(ValuesHead<T>(), static_cast<int>(values_to_read));
-    CheckNumberDecoded(num_decoded, values_to_read);
+    // DCHECK_EQ(num_decoded, values_to_read);
   }
+
+#ifdef ENABLE_QPL_ANALYSIS    
+  virtual void ReadValuesDenseAsync(int64_t values_to_read, int64_t & num_decoded, qpl_job** job, std::vector<uint8_t>** destination, T** out) {
+    num_decoded =
+        this->current_decoder_->DecodeAsync(ValuesHead<T>(), static_cast<int>(values_to_read), job, destination, out);
+    // DCHECK_EQ(num_decoded, values_to_read);
+  }
+#endif
 
   // Return number of logical records read
   int64_t ReadRecordData(int64_t num_records) {
@@ -1539,6 +1637,73 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
     }
 
     int64_t null_count = 0;
+    int64_t num_decoded = 0;
+    if (leaf_info_.HasNullableValues()) {
+      ValidityBitmapInputOutput validity_io;
+      validity_io.values_read_upper_bound = levels_position_ - start_levels_position;
+      validity_io.valid_bits = valid_bits_->mutable_data();
+      validity_io.valid_bits_offset = values_written_;
+
+      DefLevelsToBitmap(def_levels() + start_levels_position,
+                        levels_position_ - start_levels_position, leaf_info_,
+                        &validity_io);
+      values_to_read = validity_io.values_read - validity_io.null_count;
+      null_count = validity_io.null_count;
+      DCHECK_GE(values_to_read, 0);
+      ReadValuesSpaced(validity_io.values_read, null_count);
+      // cout << "ReadRecordData: leaf_info_.HasNullableValues()" << endl;
+    } else {
+      DCHECK_GE(values_to_read, 0);
+      ReadValuesDense(values_to_read, num_decoded);
+      // cout << "ReadRecordData: ReadValuesDense" << endl;
+    }
+    if (this->leaf_info_.def_level > 0) {
+      // Optional, repeated, or some mix thereof
+      this->ConsumeBufferedValues(levels_position_ - start_levels_position);
+      // cout << "ReadRecordData: ConsumeBufferedValues" << endl;
+    } else {
+      // Flat, non-repeated
+      this->ConsumeBufferedValues(values_to_read);
+      // cout << "ReadRecordData: ConsumeBufferedValues 1" << endl;
+    }
+    // Total values, including null spaces, if any
+#ifdef ENABLE_QPL_ANALYSIS     
+    values_written_ += num_decoded + null_count;
+#else
+     values_written_ += values_to_read + null_count;
+#endif     
+    null_count_ += null_count;
+
+    return records_read;
+  }
+
+#ifdef ENABLE_QPL_ANALYSIS 
+  // Return number of logical records read
+  int64_t ReadRecordDataAsync(int64_t num_records, qpl_job** job, std::vector<uint8_t>** destination, T** out) {
+    // Conservative upper bound
+    const int64_t possible_num_values =
+        std::max(num_records, levels_written_ - levels_position_);
+    ReserveValues(possible_num_values);
+
+    const int64_t start_levels_position = levels_position_;
+
+    int64_t values_to_read = 0;
+    int64_t records_read = 0;
+    if (this->max_rep_level_ > 0) {
+      records_read = DelimitRecords(num_records, &values_to_read);
+    } else if (this->max_def_level_ > 0) {
+      // No repetition levels, skip delimiting logic. Each level represents a
+      // null or not null entry
+      records_read = std::min(levels_written_ - levels_position_, num_records);
+
+      // This is advanced by DelimitRecords, which we skipped
+      levels_position_ += records_read;
+    } else {
+      records_read = values_to_read = num_records;
+    }
+
+    int64_t null_count = 0;
+    int64_t num_decoded = 0;
     if (leaf_info_.HasNullableValues()) {
       ValidityBitmapInputOutput validity_io;
       validity_io.values_read_upper_bound = levels_position_ - start_levels_position;
@@ -1554,7 +1719,7 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
       ReadValuesSpaced(validity_io.values_read, null_count);
     } else {
       DCHECK_GE(values_to_read, 0);
-      ReadValuesDense(values_to_read);
+      ReadValuesDenseAsync(values_to_read, num_decoded, job, destination, out);
     }
     if (this->leaf_info_.def_level > 0) {
       // Optional, repeated, or some mix thereof
@@ -1564,12 +1729,13 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
       this->ConsumeBufferedValues(values_to_read);
     }
     // Total values, including null spaces, if any
-    values_written_ += values_to_read + null_count;
+    values_written_ += num_decoded + null_count;
     null_count_ += null_count;
 
     return records_read;
   }
-
+  #endif
+  
   void DebugPrintState() override {
     const int16_t* def_levels = this->def_levels();
     const int16_t* rep_levels = this->rep_levels();
@@ -1596,6 +1762,7 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
     std::cout << std::endl;
   }
 
+
   void ResetValues() {
     if (values_written_ > 0) {
       // Resize to 0, but do not shrink to fit
@@ -1615,6 +1782,12 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
     return reinterpret_cast<T*>(values_->mutable_data()) + values_written_;
   }
   LevelInfo leaf_info_;
+#ifdef ENABLE_QPL_ANALYSIS
+public:
+  std::vector<qpl_job*> qpl_jobs;
+  std::vector<std::vector<uint8_t>*> destinations;
+  std::vector<T*> out_ptrs;
+#endif  
 };
 
 class FLBARecordReader : public TypedRecordReader<FLBAType>,
@@ -1635,17 +1808,18 @@ class FLBARecordReader : public TypedRecordReader<FLBAType>,
     return ::arrow::ArrayVector({chunk});
   }
 
-  void ReadValuesDense(int64_t values_to_read) override {
+  void ReadValuesDense(int64_t values_to_read, int64_t &num_decoded) override {
     auto values = ValuesHead<FLBA>();
-    int64_t num_decoded =
+    num_decoded =
         this->current_decoder_->Decode(values, static_cast<int>(values_to_read));
-    CheckNumberDecoded(num_decoded, values_to_read);
+    // DCHECK_EQ(num_decoded, values_to_read);
 
     for (int64_t i = 0; i < num_decoded; i++) {
       PARQUET_THROW_NOT_OK(builder_->Append(values[i].ptr));
     }
     ResetValues();
   }
+
 
   void ReadValuesSpaced(int64_t values_to_read, int64_t null_count) override {
     uint8_t* valid_bits = valid_bits_->mutable_data();
@@ -1658,7 +1832,7 @@ class FLBARecordReader : public TypedRecordReader<FLBAType>,
     DCHECK_EQ(num_decoded, values_to_read);
 
     for (int64_t i = 0; i < num_decoded; i++) {
-      if (::arrow::bit_util::GetBit(valid_bits, valid_bits_offset + i)) {
+      if (::arrow::BitUtil::GetBit(valid_bits, valid_bits_offset + i)) {
         PARQUET_THROW_NOT_OK(builder_->Append(values[i].ptr));
       } else {
         PARQUET_THROW_NOT_OK(builder_->AppendNull());
@@ -1692,10 +1866,10 @@ class ByteArrayChunkedRecordReader : public TypedRecordReader<ByteArrayType>,
     return result;
   }
 
-  void ReadValuesDense(int64_t values_to_read) override {
-    int64_t num_decoded = this->current_decoder_->DecodeArrowNonNull(
+  void ReadValuesDense(int64_t values_to_read, int64_t & num_decoded) override {
+    num_decoded = this->current_decoder_->DecodeArrowNonNull(
         static_cast<int>(values_to_read), &accumulator_);
-    CheckNumberDecoded(num_decoded, values_to_read);
+    DCHECK_LE(num_decoded, values_to_read);
     ResetValues();
   }
 
@@ -1703,7 +1877,7 @@ class ByteArrayChunkedRecordReader : public TypedRecordReader<ByteArrayType>,
     int64_t num_decoded = this->current_decoder_->DecodeArrow(
         static_cast<int>(values_to_read), static_cast<int>(null_count),
         valid_bits_->mutable_data(), values_written_, &accumulator_);
-    CheckNumberDecoded(num_decoded, values_to_read - null_count);
+    DCHECK_EQ(num_decoded, values_to_read - null_count);
     ResetValues();
   }
 
@@ -1751,8 +1925,8 @@ class ByteArrayDictionaryRecordReader : public TypedRecordReader<ByteArrayType>,
     }
   }
 
-  void ReadValuesDense(int64_t values_to_read) override {
-    int64_t num_decoded = 0;
+  void ReadValuesDense(int64_t values_to_read, int64_t & num_decoded) override {
+    // int64_t num_decoded = 0;
     if (current_encoding_ == Encoding::RLE_DICTIONARY) {
       MaybeWriteNewDictionary();
       auto decoder = dynamic_cast<BinaryDictDecoder*>(this->current_decoder_);
@@ -1764,7 +1938,7 @@ class ByteArrayDictionaryRecordReader : public TypedRecordReader<ByteArrayType>,
       /// Flush values since they have been copied into the builder
       ResetValues();
     }
-    CheckNumberDecoded(num_decoded, values_to_read);
+    DCHECK_EQ(num_decoded, values_to_read);
   }
 
   void ReadValuesSpaced(int64_t values_to_read, int64_t null_count) override {

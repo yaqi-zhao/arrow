@@ -131,7 +131,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Build with -fPIC so that can static link our libraries into other people's
 # shared libraries
-set(CMAKE_POSITION_INDEPENDENT_CODE ${ARROW_POSITION_INDEPENDENT_CODE})
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
 
@@ -144,21 +144,6 @@ if(WIN32)
   # insecure, like std::getenv
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 
-  # Disable static assertion in Microsoft C++ standard library.
-  #
-  # """[...]\include\type_traits(1271): error C2338:
-  # You've instantiated std::aligned_storage<Len, Align> with an extended
-  # alignment (in other words, Align > alignof(max_align_t)).
-  # Before VS 2017 15.8, the member type would non-conformingly have an
-  # alignment of only alignof(max_align_t). VS 2017 15.8 was fixed to handle
-  # this correctly, but the fix inherently changes layout and breaks binary
-  # compatibility (*only* for uses of aligned_storage with extended alignments).
-  # Please define either (1) _ENABLE_EXTENDED_ALIGNED_STORAGE to acknowledge
-  # that you understand this message and that you actually want a type with
-  # an extended alignment, or (2) _DISABLE_EXTENDED_ALIGNED_STORAGE to silence
-  # this message and get the old non-conformant behavior."""
-  add_definitions(-D_ENABLE_EXTENDED_ALIGNED_STORAGE)
-
   if(MSVC)
     if(MSVC_VERSION VERSION_LESS 19)
       message(FATAL_ERROR "Only MSVC 2015 (Version 19.0) and later are supported
@@ -169,7 +154,7 @@ if(WIN32)
     #
     # This is added to CMAKE_CXX_FLAGS instead of CXX_COMMON_FLAGS since only the
     # former is passed into the external projects
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /D_SILENCE_TR1_NAMESPACE_DEPRECATION_WARNING")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /D_SILENCE_TR1_NAMESPACE_DEPRECATION_WARNING -g")
 
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
       # clang-cl
@@ -282,16 +267,14 @@ if("${BUILD_WARNING_LEVEL}" STREQUAL "CHECKIN")
     set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wall")
     set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wextra")
     set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wdocumentation")
-    set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wshorten-64-to-32")
     set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-missing-braces")
     set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-unused-parameter")
     set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-constant-logical-operand")
-    set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-return-stack-address")
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wall")
     set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-conversion")
+    set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-deprecated-declarations")
     set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-sign-conversion")
-    set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wunused-result")
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
     if(WIN32)
       set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} /Wall")
@@ -322,7 +305,6 @@ elseif("${BUILD_WARNING_LEVEL}" STREQUAL "EVERYTHING")
     set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wpedantic")
     set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wextra")
     set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-unused-parameter")
-    set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wunused-result")
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
     if(WIN32)
       set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} /Wall")
@@ -547,8 +529,8 @@ if(NOT WIN32 AND NOT APPLE)
                     OUTPUT_VARIABLE GOLD_LOCATION
                     OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
     if("${GOLD_LOCATION}" MATCHES "^/opt/rh/devtoolset")
-      message(STATUS "Skipping optional gold linker (version ${GOLD_VERSION}) because "
-                     "it's in devtoolset")
+      message("Skipping optional gold linker (version ${GOLD_VERSION}) because "
+              "it's in devtoolset")
       set(GOLD_VERSION)
     endif()
   endif()
@@ -570,7 +552,7 @@ if(NOT WIN32 AND NOT APPLE)
       set(ARROW_BUGGY_GOLD 1)
     endif()
     if(MUST_USE_GOLD)
-      message(STATUS "Using hard-wired gold linker (version ${GOLD_VERSION})")
+      message("Using hard-wired gold linker (version ${GOLD_VERSION})")
       if(ARROW_BUGGY_GOLD)
         if("${ARROW_LINK}" STREQUAL "d" AND "${CMAKE_BUILD_TYPE}" STREQUAL "RELEASE")
           message(SEND_ERROR "Configured to use buggy gold with dynamic linking "
@@ -581,12 +563,12 @@ if(NOT WIN32 AND NOT APPLE)
       # The Gold linker must be manually enabled.
       set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fuse-ld=gold")
       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fuse-ld=gold")
-      message(STATUS "Using optional gold linker (version ${GOLD_VERSION})")
+      message("Using optional gold linker (version ${GOLD_VERSION})")
     else()
-      message(STATUS "Optional gold linker is buggy, using ld linker instead")
+      message("Optional gold linker is buggy, using ld linker instead")
     endif()
   else()
-    message(STATUS "Using ld linker")
+    message("Using ld linker")
   endif()
 endif()
 
@@ -624,7 +606,7 @@ set(CXX_FLAGS_PROFILE_GEN "${CXX_FLAGS_RELEASE} -fprofile-generate")
 set(CXX_FLAGS_PROFILE_BUILD "${CXX_FLAGS_RELEASE} -fprofile-use")
 
 # Set compile flags based on the build type.
-message(STATUS "Configured for ${CMAKE_BUILD_TYPE} build (set with cmake -DCMAKE_BUILD_TYPE={release,debug,...})"
+message("Configured for ${CMAKE_BUILD_TYPE} build (set with cmake -DCMAKE_BUILD_TYPE={release,debug,...})"
 )
 if("${CMAKE_BUILD_TYPE}" STREQUAL "DEBUG")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${C_FLAGS_DEBUG}")
