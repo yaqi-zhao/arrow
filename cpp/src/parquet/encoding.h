@@ -28,6 +28,10 @@
 #include "parquet/platform.h"
 #include "parquet/types.h"
 
+#ifdef ENABLE_QPL_ANALYSIS
+#include "qpl/qpl.h"
+#endif
+
 namespace arrow {
 
 class Array;
@@ -278,6 +282,12 @@ class TypedDecoder : virtual public Decoder {
   /// \return The number of values decoded. Should be identical to max_values except
   /// at the end of the current data page.
   virtual int Decode(T* buffer, int max_values) = 0;
+
+#ifdef ENABLE_QPL_ANALYSIS
+  virtual int DecodeAsync(T* buffer, int num_values, qpl_job** job, std::vector<uint8_t>** destination, T** out) = 0;
+
+  virtual void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination) = 0;
+#endif
 
   /// \brief Decode the values in this data page but leave spaces for null entries.
   ///

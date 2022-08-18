@@ -22,7 +22,7 @@ if(${ARROW_USE_ASAN})
      OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
      OR (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION
                                                   VERSION_GREATER "4.8"))
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -DADDRESS_SANITIZER")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -DADDRESS_SANITIZER -g")
   else()
     message(SEND_ERROR "Cannot use ASAN without clang or gcc >= 4.8")
   endif()
@@ -42,12 +42,12 @@ if(${ARROW_USE_UBSAN})
   if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" OR CMAKE_CXX_COMPILER_ID STREQUAL
                                                     "Clang")
     set(CMAKE_CXX_FLAGS
-        "${CMAKE_CXX_FLAGS} -fsanitize=undefined -fno-sanitize=alignment,vptr,function,float-divide-by-zero -fno-sanitize-recover=all"
+        "${CMAKE_CXX_FLAGS} -fsanitize=undefined -fno-sanitize=alignment,vptr,function,float-divide-by-zero -fno-sanitize-recover=all -g"
     )
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION
                                                   VERSION_GREATER_EQUAL "5.1")
     set(CMAKE_CXX_FLAGS
-        "${CMAKE_CXX_FLAGS} -fsanitize=undefined -fno-sanitize=alignment,vptr -fno-sanitize-recover=all"
+        "${CMAKE_CXX_FLAGS} -fsanitize=undefined -fno-sanitize=alignment,vptr -fno-sanitize-recover=all -g"
     )
   else()
     message(SEND_ERROR "Cannot use UBSAN without clang or gcc >= 5.1")
@@ -84,7 +84,7 @@ if(${ARROW_USE_TSAN})
   # guarantee that is via dynamic linking (not all 3rd party archives are
   # compiled with -fPIC e.g. boost).
   if("${ARROW_LINK}" STREQUAL "a")
-    message(STATUS "Using dynamic linking for TSAN")
+    message("Using dynamic linking for TSAN")
     set(ARROW_LINK "d")
   elseif("${ARROW_LINK}" STREQUAL "s")
     message(SEND_ERROR "Cannot use TSAN with static linking")
@@ -98,7 +98,7 @@ if(${ARROW_USE_COVERAGE})
     )
 
     set(CMAKE_CXX_FLAGS
-        "${CMAKE_CXX_FLAGS} -fsanitize-coverage=pc-table,inline-8bit-counters,edge,no-prune,trace-cmp,trace-div,trace-gep"
+        "${CMAKE_CXX_FLAGS} -fsanitize-coverage=pc-table,inline-8bit-counters,edge,no-prune,trace-cmp,trace-div,trace-gep -g"
     )
   else()
     message(SEND_ERROR "You can only enable coverage with clang")
@@ -113,7 +113,7 @@ if("${ARROW_USE_UBSAN}"
   if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" OR CMAKE_CXX_COMPILER_ID STREQUAL
                                                     "Clang")
     set(CMAKE_CXX_FLAGS
-        "${CMAKE_CXX_FLAGS} -fsanitize-blacklist=${BUILD_SUPPORT_DIR}/sanitizer-disallowed-entries.txt"
+        "${CMAKE_CXX_FLAGS} -fsanitize-blacklist=${BUILD_SUPPORT_DIR}/sanitizer-disallowed-entries.txt -g"
     )
   else()
     message(WARNING "GCC does not support specifying a sanitizer disallowed entries list. Known sanitizer check failures will not be suppressed."
