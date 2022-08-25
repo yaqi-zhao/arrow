@@ -268,6 +268,12 @@ if(WIN32 AND NOT (ARROW_TEST_LINKAGE STREQUAL "static"))
   set(PARQUET_LIBRARIES ${PARQUET_LIBRARIES} parquet_test_support)
 endif()
 
+
+if (TARGET ch_contrib::qpl)
+dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
+message("add contrib qpl in parquet")
+endif ()
+
 if(NOT ARROW_BUILD_SHARED)
   set(PARQUET_BENCHMARK_LINK_OPTION STATIC_LINK_LIBS benchmark::benchmark_main
                                     ${PARQUET_STATIC_TEST_LINK_LIBS})

@@ -33,6 +33,7 @@
 #include "arrow/util/bit_stream_utils.h"
 #include "arrow/util/bit_util.h"
 #include "arrow/util/macros.h"
+#include "parquet/column_reader.h"
 
 #include <emmintrin.h>
 #ifdef ENABLE_QPL_ANALYSIS
@@ -317,6 +318,7 @@ inline bool RleDecoder::Get(T* val) {
   return GetBatch(val, 1) == 1;
 }
 
+#ifndef ENABLE_QPL_ANALYSIS
 template <typename T>
 inline int RleDecoder::GetBatch(T* values, int batch_size) {
   DCHECK_GE(bit_width_, 0);
@@ -354,6 +356,60 @@ inline int RleDecoder::GetBatch(T* values, int batch_size) {
   return values_read;
 }
 
+#else
+
+template <typename T>
+inline int RleDecoder::GetBatch(T* values, int batch_size) {
+    qpl_job    *job;
+    qpl_status status;
+    uint32_t size = 0;
+    status = qpl_get_job_size(qpl_path_hardware, &size);
+    if (status != QPL_STS_OK) {
+        throw std::runtime_error("An error acquired during job size getting.");
+    }
+
+    uint32_t job_id;
+    job = parquet::QplJobHWPool::instance().acquireJob(job_id);
+    if (status != QPL_STS_OK) {
+        throw std::runtime_error("An error acquired during job initializing.");
+    }
+
+    std::vector<uint8_t> destination(batch_size * 4, 0);    
+
+    job->op                 = qpl_op_extract;
+    job->src1_bit_width     = bit_width_;
+    job->param_low          = 0;
+    job->param_high         = batch_size;
+    job->num_input_elements = batch_size;
+    job->out_bit_width      = qpl_ow_32;
+    job->parser             = qpl_p_parquet_rle;
+
+    job->next_in_ptr        = const_cast<uint8_t *>(bit_reader_.getBuffer());
+    job->available_in       = bit_reader_.getBufferLen();
+    job->next_out_ptr       = destination.data();
+    job->available_out      = static_cast<uint32_t>(destination.size());
+
+    status = qpl_execute_job(job);
+    if (status != QPL_STS_OK) {
+        throw std::runtime_error("An error acquired during job execution." + status);
+    }
+
+    status = qpl_fini_job(job);
+    if (status != QPL_STS_OK) {
+        throw std::runtime_error("An error acquired during job finalization.");
+    }
+    auto* out = values;
+    auto *indices = reinterpret_cast<uint32_t *>(destination.data());
+    for (int i = 0; i < batch_size; i++) {
+      std::fill(out, out+1, static_cast<uint32_t>(indices[i]));
+      out++;
+    }
+    parquet::QplJobHWPool::instance().releaseJob(job_id);
+
+    return batch_size;
+}
+
+#endif
 template <typename T, typename RunType, typename Converter>
 inline int RleDecoder::GetSpaced(Converter converter, int batch_size, int null_count,
                                  const uint8_t* valid_bits, int64_t valid_bits_offset,
@@ -579,9 +635,6 @@ inline int RleDecoder::GetBatchWithDict(const T* dictionary, int32_t dictionary_
   int values_read = 0;
 
   auto* out = values;
-  // std::cout << "RleDecoder::GetBatchWithDict, repeated_count {" << repeat_count_ << "}, literal_count_ {" << literal_count_ << "}";
-  // std::cout << "values_read {" << values_read << "} batch size {" << batch_size << "}" << std::endl;
-  // arrow_print_debug();
 
   while (values_read < batch_size) {
     int remaining = batch_size - values_read;
@@ -640,6 +693,8 @@ template <typename T>
 inline int RleDecoder::GetBatchAsync(const T* dictionary, int32_t dictionary_length,
                                         T* values, int batch_size, T** out, qpl_job** job, std::vector<uint8_t>** destination) {
     // qpl_job    *job;
+    // std::cout << "RleDecoder::GetBatchAsync, dictionary_length: " << dictionary_length << std::endl;
+    // bit_reader_.Reset(--bit_reader_.getBuffer(), );
     qpl_status status;
     uint32_t size = 0;
     status = qpl_get_job_size(qpl_path_hardware, &size);
@@ -647,14 +702,24 @@ inline int RleDecoder::GetBatchAsync(const T* dictionary, int32_t dictionary_len
         throw std::runtime_error("An error acquired during job size getting.");
     }
 
-    *job    = (qpl_job *) std::malloc(size);
+    // *job    = (qpl_job *) std::malloc(size);
     qpl_job* async_job = *job;
-    status = qpl_init_job(qpl_path_hardware, async_job);
-    if (status != QPL_STS_OK) {
-        throw std::runtime_error("An error acquired during job initializing.");
-    }
+    // status = qpl_init_job(qpl_path_hardware, async_job);
+    // if (status != QPL_STS_OK) {
+    //     throw std::runtime_error("An error acquired during job initializing.");
+    // }
 
-    *destination = new std::vector<uint8_t>(batch_size);
+    // *destination = new std::vector<uint8_t>(batch_size * 4);
+    if (dictionary_length < 0xFF) {
+      async_job->out_bit_width      = qpl_ow_8;  
+      *destination = new std::vector<uint8_t>(batch_size, 0);
+    } else if (dictionary_length < 0xFFFF) {
+      async_job->out_bit_width      = qpl_ow_16;  
+      *destination = new std::vector<uint8_t>(batch_size * 2, 0);
+    } else {
+      async_job->out_bit_width      = qpl_ow_32;  
+      *destination = new std::vector<uint8_t>(batch_size * 4, 0);
+    }
     auto qpl_out = *destination;
     // destination.resize(batch_size, 0);   
 
@@ -663,7 +728,7 @@ inline int RleDecoder::GetBatchAsync(const T* dictionary, int32_t dictionary_len
     async_job->param_low          = 0;
     async_job->param_high         = batch_size;
     async_job->num_input_elements = batch_size;
-    async_job->out_bit_width      = qpl_ow_8;
+    // async_job->out_bit_width      = qpl_ow_32;
     async_job->parser             = qpl_p_parquet_rle;
 
     async_job->next_in_ptr        = const_cast<uint8_t *>(bit_reader_.getBuffer());
@@ -685,6 +750,7 @@ inline int RleDecoder::GetBatchAsync(const T* dictionary, int32_t dictionary_len
 template <typename T>
 inline int RleDecoder::GetBatchWithDictEqual(const T* dictionary, int32_t dictionary_length,
                                         T* values, int batch_size) {
+    // std::cout << "RleDecoder::GetBatchWithDictEqual, dictionary_length: " << dictionary_length << std::endl;
     qpl_job    *job;
     qpl_status status;
     uint32_t size = 0;
@@ -693,20 +759,22 @@ inline int RleDecoder::GetBatchWithDictEqual(const T* dictionary, int32_t dictio
         throw std::runtime_error("An error acquired during job size getting.");
     }
 
-    job    = (qpl_job *) std::malloc(size);
-    status = qpl_init_job(qpl_path_hardware, job);
+    uint32_t job_id;
+    job = parquet::QplJobHWPool::instance().acquireJob(job_id);
+    // job    = (qpl_job *) std::malloc(size);
+    // status = qpl_init_job(qpl_path_hardware, job);
     if (status != QPL_STS_OK) {
         throw std::runtime_error("An error acquired during job initializing.");
     }
 
-    std::vector<uint8_t> destination(batch_size, 0);    
+    std::vector<uint8_t> destination(batch_size * 4, 0);    
 
     job->op                 = qpl_op_extract;
     job->src1_bit_width     = bit_width_;
     job->param_low          = 0;
     job->param_high         = batch_size;
     job->num_input_elements = batch_size;
-    job->out_bit_width      = qpl_ow_8;
+    job->out_bit_width      = qpl_ow_32;
     job->parser             = qpl_p_parquet_rle;
 
     job->next_in_ptr        = const_cast<uint8_t *>(bit_reader_.getBuffer());
@@ -716,7 +784,7 @@ inline int RleDecoder::GetBatchWithDictEqual(const T* dictionary, int32_t dictio
 
     status = qpl_execute_job(job);
     if (status != QPL_STS_OK) {
-        throw std::runtime_error("An error acquired during job execution.");
+        throw std::runtime_error("An error acquired during job execution." + status);
     }
 
     status = qpl_fini_job(job);
@@ -724,15 +792,16 @@ inline int RleDecoder::GetBatchWithDictEqual(const T* dictionary, int32_t dictio
         throw std::runtime_error("An error acquired during job finalization.");
     }
     auto* out = values;
+    auto *indices = reinterpret_cast<uint32_t *>(destination.data());
     for (int i = 0; i < batch_size; i++) {
-      uint8_t idx = static_cast<uint8_t>(destination[i]);
+      uint32_t idx = static_cast<uint32_t>(indices[i]);
       // std::cout << idx << std::endl;
       T val = dictionary[idx];
       std::fill(out, out+1, val);
       out++;
     }
-    std::free(job);
-    // std::cout << "batch_size: " << batch_size << std::endl;
+    // std::free(job);
+    parquet::QplJobHWPool::instance().releaseJob(job_id);
 
     return batch_size;
 }     

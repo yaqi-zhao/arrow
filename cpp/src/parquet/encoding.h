@@ -21,6 +21,7 @@
 #include <cstring>
 #include <memory>
 #include <vector>
+#include <iostream>
 
 #include "arrow/util/spaced.h"
 
@@ -283,10 +284,17 @@ class TypedDecoder : virtual public Decoder {
   /// at the end of the current data page.
   virtual int Decode(T* buffer, int max_values) = 0;
 
-#ifdef ENABLE_QPL_ANALYSIS
-  virtual int DecodeAsync(T* buffer, int num_values, qpl_job** job, std::vector<uint8_t>** destination, T** out) = 0;
 
-  virtual void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination) = 0;
+
+#ifdef ENABLE_QPL_ANALYSIS
+  virtual int DecodeAsync(T* buffer, int num_values, qpl_job** job, std::vector<uint8_t>** destination, T** out) {
+    return Decode(buffer, num_values);
+  }
+
+  void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination)  {
+    std::cout << "virtual FillDecodedData" << std::endl;
+    return;
+  }
 #endif
 
   /// \brief Decode the values in this data page but leave spaces for null entries.
@@ -399,6 +407,7 @@ class DictDecoder : virtual public TypedDecoder<DType> {
   ///
   /// \note API EXPERIMENTAL
   virtual void GetDictionary(const T** dictionary, int32_t* dictionary_length) = 0;
+  virtual void GetDictionaryPtr(std::shared_ptr<ResizableBuffer> & dic_ptr) = 0;
 };
 
 // ----------------------------------------------------------------------

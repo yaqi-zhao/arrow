@@ -23,6 +23,7 @@
 #include <exception>
 #include <iostream>
 #include <memory>
+#include <random>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -81,6 +82,110 @@ inline bool HasSpacedValues(const ColumnDescriptor* descr) {
   }
 }
 }  // namespace
+
+
+
+#ifdef ENABLE_QPL_ANALYSIS
+std::array<qpl_job *, QplJobHWPool::MAX_HW_JOB_NUMBER> QplJobHWPool::hw_job_ptr_pool;
+std::array<std::atomic_bool, QplJobHWPool::MAX_HW_JOB_NUMBER> QplJobHWPool::hw_job_ptr_locks;
+bool QplJobHWPool::job_pool_ready = false;
+std::unique_ptr<uint8_t[]> QplJobHWPool::hw_jobs_buffer;
+
+QplJobHWPool & QplJobHWPool::instance()
+{
+    static QplJobHWPool pool;
+    return pool;
+}
+
+QplJobHWPool::QplJobHWPool()
+    : random_engine(std::random_device()())
+    , distribution(0, MAX_HW_JOB_NUMBER - 1)
+{
+    uint32_t job_size = 0;
+    const char * qpl_version = qpl_get_library_version();
+
+    /// Get size required for saving a single qpl job object
+    qpl_get_job_size(qpl_path_hardware, &job_size);
+    /// Allocate entire buffer for storing all job objects
+    hw_jobs_buffer = std::make_unique<uint8_t[]>(job_size * MAX_HW_JOB_NUMBER);
+    /// Initialize pool for storing all job object pointers
+    /// Reallocate buffer by shifting address offset for each job object.
+    for (uint32_t index = 0; index < MAX_HW_JOB_NUMBER; ++index)
+    {
+        qpl_job * qpl_job_ptr = reinterpret_cast<qpl_job *>(hw_jobs_buffer.get() + index * job_size);
+        if (qpl_init_job(qpl_path_hardware, qpl_job_ptr) != QPL_STS_OK)
+        {
+            job_pool_ready = false;
+            std::cout << "Initialization of hardware-assisted DeflateQpl codec failed, falling back to software DeflateQpl codec. Please check if Intel In-Memory Analytics Accelerator (IAA) is properly set up. QPL Version: {}.";
+            return;
+        }
+        hw_job_ptr_pool[index] = qpl_job_ptr;
+        unLockJob(index);
+    }
+
+    job_pool_ready = true;
+}
+
+QplJobHWPool::~QplJobHWPool()
+{
+    for (uint32_t i = 0; i < MAX_HW_JOB_NUMBER; ++i)
+    {
+        if (hw_job_ptr_pool[i])
+        {
+            while (!tryLockJob(i));
+            qpl_fini_job(hw_job_ptr_pool[i]);
+            unLockJob(i);
+            hw_job_ptr_pool[i] = nullptr;
+        }
+    }
+    job_pool_ready = false;
+}
+
+
+
+qpl_job * QplJobHWPool::acquireJob(uint32_t & job_id)
+{
+    if (isJobPoolReady())
+    {
+        uint32_t retry = 0;
+        auto index = distribution(random_engine);
+        while (!tryLockJob(index))
+        {
+            index = distribution(random_engine);
+            retry++;
+            if (retry > MAX_HW_JOB_NUMBER)
+            {
+                return nullptr;
+            }
+        }
+        job_id = MAX_HW_JOB_NUMBER - index;
+        assert(index < MAX_HW_JOB_NUMBER);
+        return hw_job_ptr_pool[index];
+    }
+    else
+        return nullptr;
+}
+
+void QplJobHWPool::releaseJob(uint32_t job_id)
+{
+    if (isJobPoolReady())
+        unLockJob(MAX_HW_JOB_NUMBER - job_id);
+}
+
+bool QplJobHWPool::tryLockJob(uint32_t index)
+{
+    bool expected = false;
+    assert(index < MAX_HW_JOB_NUMBER);
+    return hw_job_ptr_locks[index].compare_exchange_strong(expected, true);
+}
+
+void QplJobHWPool::unLockJob(uint32_t index)
+{
+    assert(index < MAX_HW_JOB_NUMBER);
+    hw_job_ptr_locks[index].store(false);
+}
+
+#endif
 
 LevelDecoder::LevelDecoder() : num_values_remaining_(0) {}
 
@@ -602,15 +707,18 @@ class ColumnReaderImplBase {
       }
 
       if (current_page_->type() == PageType::DICTIONARY_PAGE) {
+        // std::cout << "PageType::DICTIONARY_PAGE" << std::endl;
         ConfigureDictionary(static_cast<const DictionaryPage*>(current_page_.get()));
         continue;
       } else if (current_page_->type() == PageType::DATA_PAGE) {
+        // std::cout << "PageType::DATA_PAGE" << std::endl;
         const auto page = std::static_pointer_cast<DataPageV1>(current_page_);
         const int64_t levels_byte_size = InitializeLevelDecoders(
             *page, page->repetition_level_encoding(), page->definition_level_encoding());
         InitializeDataDecoder(*page, levels_byte_size);
         return true;
       } else if (current_page_->type() == PageType::DATA_PAGE_V2) {
+        // std::cout << "PageType::DATA_PAGE_V2" << std::endl;
         const auto page = std::static_pointer_cast<DataPageV2>(current_page_);
         int64_t levels_byte_size = InitializeLevelDecodersV2(*page);
         InitializeDataDecoder(*page, levels_byte_size);
@@ -760,18 +868,21 @@ class ColumnReaderImplBase {
         DCHECK(current_decoder_->encoding() == Encoding::RLE_DICTIONARY);
       }
       current_decoder_ = it->second.get();
+      // std::cout << "Encoding::RLE_DICTIONARY, current_decoder_:" << current_decoder_->encoding() << std::endl;
     } else {
       switch (encoding) {
         case Encoding::PLAIN: {
           auto decoder = MakeTypedDecoder<DType>(Encoding::PLAIN, descr_);
           current_decoder_ = decoder.get();
           decoders_[static_cast<int>(encoding)] = std::move(decoder);
+          // std::cout << "Encoding::PLAIN" << std::endl;
           break;
         }
         case Encoding::BYTE_STREAM_SPLIT: {
           auto decoder = MakeTypedDecoder<DType>(Encoding::BYTE_STREAM_SPLIT, descr_);
           current_decoder_ = decoder.get();
           decoders_[static_cast<int>(encoding)] = std::move(decoder);
+          // std::cout << "Encoding::BYTE_STREAM_SPLIT" << std::endl;
           break;
         }
         case Encoding::RLE_DICTIONARY:
@@ -781,6 +892,7 @@ class ColumnReaderImplBase {
           auto decoder = MakeTypedDecoder<DType>(Encoding::DELTA_BINARY_PACKED, descr_);
           current_decoder_ = decoder.get();
           decoders_[static_cast<int>(encoding)] = std::move(decoder);
+          // std::cout << "Encoding::DELTA_BINARY_PACKED" << std::endl;
           break;
         }
         case Encoding::DELTA_LENGTH_BYTE_ARRAY:
@@ -1213,13 +1325,10 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
     // Delimit records, then read values at the end
     int64_t records_read = 0;
 
-    // cout << "ReadRecords: levels_position_ {"  << levels_position_ << "}, levels_written_ {" << levels_written_ << "}" << endl;
     if (levels_position_ < levels_written_) {
-      records_read += ReadRecordDataAsync(num_records, &(qpl_jobs[row_group_index]), &destinations[row_group_index], &out_ptrs[row_group_index]);
-      // cout << "ReadRecords->ReadRecordData, records_read: " << records_read << endl;
+      records_read += ReadRecordDataAsync(num_records, &(job_ids[row_group_index]), &(qpl_jobs[row_group_index]), &destinations[row_group_index], &out_ptrs[row_group_index]);
     }
 
-    // cout << "ReadRecords: num_records {" << num_records << "}" << endl;
     int64_t level_batch_size = std::max(kMinLevelBatchSize, num_records);
 
     // If we are in the middle of a record, we continue until reaching the
@@ -1248,7 +1357,6 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
       }
 
       if (this->max_def_level_ > 0) {
-        // cout << "ReadRecords: max_def_level_ bigger than 0, max_def_level_{" << this->max_def_level_ << "}" << endl;
         ReserveLevels(batch_size);
 
         int16_t* def_levels = this->def_levels() + levels_written_;
@@ -1271,12 +1379,12 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
         }
 
         levels_written_ += levels_read;
-        records_read += ReadRecordDataAsync(num_records - records_read, &(qpl_jobs[row_group_index]), &destinations[row_group_index], &out_ptrs[row_group_index]);
+        records_read += ReadRecordDataAsync(num_records - records_read, &(job_ids[row_group_index]), &(qpl_jobs[row_group_index]), &destinations[row_group_index], &out_ptrs[row_group_index]);
       } else {
         // No repetition or definition levels
         batch_size = std::min(num_records - records_read, batch_size);
         // cout << "ReadRecords: max_def_level_ less than 0, batch_size {" << batch_size << "}" << endl;
-        records_read += ReadRecordDataAsync(batch_size, &(qpl_jobs[row_group_index]), &destinations[row_group_index], &out_ptrs[row_group_index]);
+        records_read += ReadRecordDataAsync(batch_size, &(job_ids[row_group_index]), &(qpl_jobs[row_group_index]), &destinations[row_group_index], &out_ptrs[row_group_index]);
       }
     }
 
@@ -1290,13 +1398,10 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
     // Delimit records, then read values at the end
     int64_t records_read = 0;
 
-    // cout << "ReadRecords: levels_position_ {"  << levels_position_ << "}, levels_written_ {" << levels_written_ << "}" << endl;
     if (levels_position_ < levels_written_) {
       records_read += ReadRecordData(num_records);
-      // cout << "ReadRecords->ReadRecordData, records_read: " << records_read << endl;
     }
 
-    // cout << "ReadRecords: num_records {" << num_records << "}" << endl;
     int64_t level_batch_size = std::max(kMinLevelBatchSize, num_records);
 
     // If we are in the middle of a record, we continue until reaching the
@@ -1359,6 +1464,12 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
 
     // cout << "ReadRecords: return records_read {" << records_read << "}" << endl;
     return records_read;
+  }
+
+
+
+  void test() override {  
+    std::cout << "test..." << std::endl;
   }
 
   // We may outwardly have the appearance of having exhausted a column chunk
@@ -1445,26 +1556,21 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
     qpl_jobs.resize(capacity, nullptr);
     destinations.resize(capacity);
     out_ptrs.resize(capacity, nullptr);
+    job_ids.resize(capacity, -1);
+    dictionary_ptrs.resize(capacity, nullptr);
+    // for (size_t i = 0; i < capacity; i++) {
+    //   uint32_t job_id;
+    //   qpl_jobs[i] = QplJobHWPool::instance().acquireJob(job_id);
+    //   job_ids[i] = job_id;
+    // }
   }
-
-  // void FreeAsyncVector(int64_t capacity) override {
-  //   for (size_t i= 0; i < capacity; i++) {
-  //     vector<uint8_t>().swap(*destinations[i]);
-  //     delete destinations[i];
-  //     std::free(qpl_jobs[i]);
-  //   }
-  // }
 
   void FreeAsyncVector(int64_t capacity) override {
     vector<uint8_t>().swap(*destinations[capacity]);
     delete destinations[capacity];
-    std::free(qpl_jobs[capacity]);
-
-    // for (size_t i= 0; i < capacity; i++) {
-    //   vector<uint8_t>().swap(*destinations[i]);
-    //   delete destinations[i];
-    //   std::free(qpl_jobs[i]);
-    // }
+    if (job_ids[capacity] > 0) {
+      QplJobHWPool::instance().releaseJob(job_ids[capacity]);
+    }
   }
 
   std::vector<qpl_job*> & GetQplJobs() override {
@@ -1475,12 +1581,61 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
     return destinations;
   }
 
-  void FillOutData(size_t row_group_idx, int64_t records_read) override {
+  void AddDictionaryData(int64_t index) {
+    auto decoder = dynamic_cast<DictDecoder<DType>*>(this->current_decoder_);
+    int32_t dic_len;
+    T* dict_ptr = nullptr;
+    decoder->GetDictionaryPtr(dictionary_ptrs[index]);
+    // decoder->GetDictionary(&dict_ptr, &dic_len);
+    return;
+
+  }
+
+  virtual void FillOutData(size_t row_group_idx, int64_t records_read) override {
     auto out = out_ptrs[row_group_idx];
     auto destination = destinations[row_group_idx];
     auto job = qpl_jobs[row_group_idx];
-    return this->current_decoder_->FillDecodedData(out, records_read, destination);
-    // return this->current_decoder_->FillDecodedData(out, job->total_out, destination);
+    // auto dictionary = dictionary_ptrs[index];
+    auto dictionary = reinterpret_cast<T*>(dictionary_ptrs[row_group_idx]->mutable_data());
+
+    if (destination == nullptr) {
+      throw std::runtime_error("destination is nullptr.");
+    }
+    if (destination->size() / records_read == 4) {
+       auto *indices = reinterpret_cast<uint32_t *>(destination->data());
+      for (int j = 0; j < records_read; j++) {
+        uint32_t idx = static_cast<uint32_t>(indices[j]);
+        // std::cout << idx << std::endl;
+        T val = dictionary[idx];
+        std::fill(out, out+1, val);
+        out++;
+      }       
+    } else if (destination->size() / records_read == 2) {
+      auto *indices = reinterpret_cast<uint16_t *>(destination->data());
+      for (int j = 0; j < records_read; j++) {
+        uint16_t idx = static_cast<uint16_t>(indices[j]);
+        // std::cout << idx << std::endl;
+        T val = dictionary[idx];
+        std::fill(out, out+1, val);
+        out++;
+      }  
+    }  else {
+      auto *indices = reinterpret_cast<uint8_t *>(destination->data());
+      for (int j = 0; j < records_read; j++) {
+        uint8_t idx = static_cast<uint8_t>(indices[j]);
+        // std::cout << idx << std::endl;
+        T val = dictionary[idx];
+        std::fill(out, out+1, val);
+        out++;
+      }  
+    }
+    return;
+
+    //   auto decoder = dynamic_cast<DictDecoder<DType>*>(this->current_decoder_);
+    //   // std::cout << "current_decoder_->current_encoding_ " << this->current_encoding_ << ", destination: " << destination->size() << ", nums: " << records_read << std::endl;
+    //   return;
+    //  return this->current_decoder_->FillDecodedData(out, records_read, destination);
+
   }
 
 #endif
@@ -1598,17 +1753,23 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
   }
 
   virtual void ReadValuesDense(int64_t values_to_read, int64_t & num_decoded) {
-    // cout << "ReadValuesDense call Decode" << endl;
+    // std::cout << "ReadValuesDense call Decode" << std::endl;
     num_decoded =
         this->current_decoder_->Decode(ValuesHead<T>(), static_cast<int>(values_to_read));
-    // DCHECK_EQ(num_decoded, values_to_read);
+    // std::cout << "current_decoder_->encoding() " << this->current_decoder_->encoding() << std::endl;
+    
+    DCHECK_EQ(num_decoded, values_to_read);
   }
 
 #ifdef ENABLE_QPL_ANALYSIS    
-  virtual void ReadValuesDenseAsync(int64_t values_to_read, int64_t & num_decoded, qpl_job** job, std::vector<uint8_t>** destination, T** out) {
+  virtual void ReadValuesDenseAsync(int64_t values_to_read, int64_t & num_decoded, int32_t* qpl_job_id, qpl_job** job, std::vector<uint8_t>** destination, T** out) {
+    // std::cout << "ReadValuesDenseAsync call DecodeAsync" << std::endl;
+    uint32_t job_id = 0;
+    *job = QplJobHWPool::instance().acquireJob(job_id);
+    *qpl_job_id = job_id;
     num_decoded =
         this->current_decoder_->DecodeAsync(ValuesHead<T>(), static_cast<int>(values_to_read), job, destination, out);
-    // DCHECK_EQ(num_decoded, values_to_read);
+    DCHECK_EQ(num_decoded, values_to_read);
   }
 #endif
 
@@ -1651,24 +1812,25 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
       null_count = validity_io.null_count;
       DCHECK_GE(values_to_read, 0);
       ReadValuesSpaced(validity_io.values_read, null_count);
-      // cout << "ReadRecordData: leaf_info_.HasNullableValues()" << endl;
+      cout << "ReadRecordData: leaf_info_.HasNullableValues()" << endl;
     } else {
       DCHECK_GE(values_to_read, 0);
       ReadValuesDense(values_to_read, num_decoded);
-      // cout << "ReadRecordData: ReadValuesDense" << endl;
+      cout << "ReadRecordData: ReadValuesDense" << endl;
     }
     if (this->leaf_info_.def_level > 0) {
       // Optional, repeated, or some mix thereof
       this->ConsumeBufferedValues(levels_position_ - start_levels_position);
-      // cout << "ReadRecordData: ConsumeBufferedValues" << endl;
+      cout << "ReadRecordData: ConsumeBufferedValues" << endl;
     } else {
       // Flat, non-repeated
       this->ConsumeBufferedValues(values_to_read);
-      // cout << "ReadRecordData: ConsumeBufferedValues 1" << endl;
+      cout << "ReadRecordData: ConsumeBufferedValues 1" << endl;
     }
     // Total values, including null spaces, if any
 #ifdef ENABLE_QPL_ANALYSIS     
-    values_written_ += num_decoded + null_count;
+    values_written_ += values_to_read + null_count;
+    // values_written_ += num_decoded + null_count;
 #else
      values_written_ += values_to_read + null_count;
 #endif     
@@ -1679,7 +1841,7 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
 
 #ifdef ENABLE_QPL_ANALYSIS 
   // Return number of logical records read
-  int64_t ReadRecordDataAsync(int64_t num_records, qpl_job** job, std::vector<uint8_t>** destination, T** out) {
+  int64_t ReadRecordDataAsync(int64_t num_records, int32_t* qpl_job_id, qpl_job** job, std::vector<uint8_t>** destination, T** out) {
     // Conservative upper bound
     const int64_t possible_num_values =
         std::max(num_records, levels_written_ - levels_position_);
@@ -1717,9 +1879,11 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
       null_count = validity_io.null_count;
       DCHECK_GE(values_to_read, 0);
       ReadValuesSpaced(validity_io.values_read, null_count);
+      // std::cout << "ReadRecordDataAsync ReadValuesSpaced" << std::endl;
     } else {
       DCHECK_GE(values_to_read, 0);
-      ReadValuesDenseAsync(values_to_read, num_decoded, job, destination, out);
+      ReadValuesDenseAsync(values_to_read, num_decoded, qpl_job_id, job, destination, out);
+      // std::cout << "TypedRecordReader::ReadRecordDataAsync ReadValuesDenseAsync" << std::endl;
     }
     if (this->leaf_info_.def_level > 0) {
       // Optional, repeated, or some mix thereof
@@ -1787,6 +1951,8 @@ public:
   std::vector<qpl_job*> qpl_jobs;
   std::vector<std::vector<uint8_t>*> destinations;
   std::vector<T*> out_ptrs;
+  std::vector<int32_t> job_ids;
+  std::vector<std::shared_ptr<ResizableBuffer>> dictionary_ptrs;
 #endif  
 };
 
@@ -1820,6 +1986,16 @@ class FLBARecordReader : public TypedRecordReader<FLBAType>,
     ResetValues();
   }
 
+#ifdef ENABLE_QPL_ANALYSIS    
+  void ReadValuesDenseAsync(int64_t values_to_read, int64_t & num_decoded, int32_t* qpl_job_id, qpl_job** job, std::vector<uint8_t>** destination, T** out) override {
+    std::cout << "FLBARecordReader::ReadValuesDenseAsyn" << std::endl;
+    return ReadValuesDense(values_to_read, num_decoded);
+  }
+
+  // void FillOutData(size_t row_group_idx, int64_t records_read) override {
+  //   return;
+  // }
+#endif
 
   void ReadValuesSpaced(int64_t values_to_read, int64_t null_count) override {
     uint8_t* valid_bits = valid_bits_->mutable_data();
@@ -1872,6 +2048,14 @@ class ByteArrayChunkedRecordReader : public TypedRecordReader<ByteArrayType>,
     DCHECK_LE(num_decoded, values_to_read);
     ResetValues();
   }
+
+#ifdef ENABLE_QPL_ANALYSIS    
+  void ReadValuesDenseAsync(int64_t values_to_read, int64_t & num_decoded, int32_t* qpl_job_id, qpl_job** job, std::vector<uint8_t>** destination, T** out) override {
+    // std::cout << "ByteArrayChunkedRecordReader::ReadValuesDenseAsyn" << std::endl;
+    return ReadValuesDense(values_to_read, num_decoded);
+  }
+
+#endif
 
   void ReadValuesSpaced(int64_t values_to_read, int64_t null_count) override {
     int64_t num_decoded = this->current_decoder_->DecodeArrow(
@@ -1940,6 +2124,17 @@ class ByteArrayDictionaryRecordReader : public TypedRecordReader<ByteArrayType>,
     }
     DCHECK_EQ(num_decoded, values_to_read);
   }
+
+#ifdef ENABLE_QPL_ANALYSIS    
+  void ReadValuesDenseAsync(int64_t values_to_read, int64_t & num_decoded, int32_t* qpl_job_id, qpl_job** job, std::vector<uint8_t>** destination, T** out) override {
+    std::cout << "ByteArrayDictionaryRecordReader::ReadValuesDenseAsyn" << std::endl;
+    return ReadValuesDense(values_to_read, num_decoded);
+  }
+
+  // void FillOutData(size_t row_group_idx, int64_t records_read) override {
+  //   return;
+  // }
+#endif
 
   void ReadValuesSpaced(int64_t values_to_read, int64_t null_count) override {
     int64_t num_decoded = 0;

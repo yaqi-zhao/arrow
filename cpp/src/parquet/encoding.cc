@@ -974,14 +974,13 @@ class PlainDecoder : public DecoderImpl, virtual public TypedDecoder<DType> {
   explicit PlainDecoder(const ColumnDescriptor* descr);
 
   int Decode(T* buffer, int max_values) override;
-#ifdef ENABLE_QPL_ANALYSIS    
-  int DecodeAsync(T* buffer, int num_values, qpl_job** job, std::vector<uint8_t>** destination, T** out) override {
-    return num_values;
-  }
 
-  void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination) {
-    return;
-  }
+#ifdef ENABLE_QPL_ANALYSIS    
+  // int DecodeAsync(T* buffer, int num_values, qpl_job** job, std::vector<uint8_t>** destination, T** out) override;
+
+  // void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination) {
+  //   return;
+  // }
   #endif
 
   int DecodeArrow(int num_values, int null_count, const uint8_t* valid_bits,
@@ -1167,14 +1166,16 @@ class PlainBooleanDecoder : public DecoderImpl,
 
   // Two flavors of bool decoding
   int Decode(uint8_t* buffer, int max_values) override;
+  
 #ifdef ENABLE_QPL_ANALYSIS  
-  int DecodeAsync(T* buffer, int num_values, qpl_job** job, std::vector<uint8_t>** destination, T** out) override {
-    return num_values;
-  }
+  // int DecodeAsync(bool* buffer, int num_values, qpl_job** job, std::vector<uint8_t>** destination, bool** out) override {
+  //   return Decode(buffer, num_values);
+  // }
 
-  void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination) {
-    return;
-  }
+  // void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination) override {
+  //   std::cout << "PlainBooleanDecoder::FillDecodedData" << std::endl;
+  //   return;
+  // }
 #endif  
 
   int Decode(bool* buffer, int max_values) override;
@@ -1481,7 +1482,7 @@ class PlainFLBADecoder : public PlainDecoder<FLBAType>, virtual public FLBADecod
 // Dictionary encoding and decoding
 
 
-static void DictDecoderImpl_debug() {
+void DictDecoderImpl_debug() {
   std::cout << "DictDecoderImpl_debug" << std::endl;
 }
 
@@ -1520,6 +1521,7 @@ class DictDecoderImpl : public DecoderImpl, virtual public DictDecoder<Type> {
     // DictDecoderImpl_debug();
 #ifdef ENABLE_QPL_ANALYSIS      
     idx_decoder_ = ::arrow::util::RleDecoder(data, len, bit_width);
+    // idx_decoder_ = ::arrow::util::RleDecoder(++data, --len, bit_width);
 #else    
     idx_decoder_ = ::arrow::util::RleDecoder(++data, --len, bit_width);
 #endif
@@ -1534,7 +1536,7 @@ class DictDecoderImpl : public DecoderImpl, virtual public DictDecoder<Type> {
       // decoded_values = idx_decoder_.GetBatchWithDictEqual(reinterpret_cast<const T*>(dictionary_->data()),
       //                                 dictionary_length_, buffer, num_values);
       decoded_values = idx_decoder_.GetBatchWithDictEqual(reinterpret_cast<const T*>(dictionary_->data()),
-                                      dictionary_length_, buffer, num_values);                                      
+                                      dictionary_length_, buffer, num_values);      
 #else
         decoded_values = idx_decoder_.GetBatchWithDict(reinterpret_cast<const T*>(dictionary_->data()),
                                       dictionary_length_, buffer, num_values);
@@ -1551,7 +1553,7 @@ class DictDecoderImpl : public DecoderImpl, virtual public DictDecoder<Type> {
 
 
 #ifdef ENABLE_QPL_ANALYSIS    
-  int DecodeAsync(T* buffer, int num_values, qpl_job** job, std::vector<uint8_t>** destination, T** out) {
+  int DecodeAsync(T* buffer, int num_values, qpl_job** job, std::vector<uint8_t>** destination, T** out) override {
     num_values = std::min(num_values, num_values_);
     
     int decoded_values;
@@ -1559,16 +1561,15 @@ class DictDecoderImpl : public DecoderImpl, virtual public DictDecoder<Type> {
                                   dictionary_length_, buffer, num_values, out, job, destination);
         // decoded_values = idx_decoder_.GetBatchWithDict(reinterpret_cast<const T*>(dictionary_->data()),
         //                               dictionary_length_, buffer, num_values);
-    // std::cout << "DictDecoderImpl:Decode decoded_values {" << decoded_values << "}" << std::endl;
     if (decoded_values != num_values) {
-      // ParquetException::EofException();
+      ParquetException::EofException();
     }
     num_values_ -= num_values;
     num_values_ -= num_values;
     
     return decoded_values;
   }
-#endif                                      
+                                
 
 
   // void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination) {
@@ -1577,24 +1578,45 @@ class DictDecoderImpl : public DecoderImpl, virtual public DictDecoder<Type> {
   //     throw std::runtime_error("destination is nullptr.");
   //   }
   //   std::fill(out, out+num_values, dictionary[0]);
-  //   // std::cout << "fill in out: " << num_values << std::endl;
+  //   // std::cout << "fill in out: " << dictionary[0] << std::endl;
   //   return;
   // }
-
   void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination) {
     auto dictionary = reinterpret_cast<const T*>(dictionary_->data());
     if (destination == nullptr) {
       throw std::runtime_error("destination is nullptr.");
     }
-    for (int j = 0; j < num_values; j++) {
-      uint8_t idx = static_cast<uint8_t>(destination->at(j));
-      T val = dictionary[idx];
-      std::fill(out, out+1, val);
-      out++;
+    if (destination->size() / num_values == 4) {
+       auto *indices = reinterpret_cast<uint32_t *>(destination->data());
+      for (int j = 0; j < num_values; j++) {
+        uint32_t idx = static_cast<uint32_t>(indices[j]);
+        // std::cout << idx << std::endl;
+        T val = dictionary[idx];
+        std::fill(out, out+1, val);
+        out++;
+      }       
+    } else if (destination->size() / num_values == 2) {
+      auto *indices = reinterpret_cast<uint16_t *>(destination->data());
+      for (int j = 0; j < num_values; j++) {
+        uint16_t idx = static_cast<uint16_t>(indices[j]);
+        // std::cout << idx << std::endl;
+        T val = dictionary[idx];
+        std::fill(out, out+1, val);
+        out++;
+      }  
+    }  else {
+      auto *indices = reinterpret_cast<uint8_t *>(destination->data());
+      for (int j = 0; j < num_values; j++) {
+        uint8_t idx = static_cast<uint8_t>(indices[j]);
+        // std::cout << idx << std::endl;
+        T val = dictionary[idx];
+        std::fill(out, out+1, val);
+        out++;
+      }  
     }
     return;
   }
-
+#endif      
 
   int DecodeSpaced(T* buffer, int num_values, int null_count, const uint8_t* valid_bits,
                    int64_t valid_bits_offset) override {
@@ -1686,8 +1708,14 @@ class DictDecoderImpl : public DecoderImpl, virtual public DictDecoder<Type> {
     *dictionary = reinterpret_cast<T*>(dictionary_->mutable_data());
   }
 
+  void GetDictionaryPtr(std::shared_ptr<ResizableBuffer> & dic_ptr) override {
+    dic_ptr = dictionary_;
+  }
+
  protected:
   Status IndexInBounds(int32_t index) {
+    // DictDecoderImpl_debug();
+    // std::cout << "index: " << index << ", dictionary_length_: " << dictionary_length_ << std::endl;
     if (ARROW_PREDICT_TRUE(0 <= index && index < dictionary_length_)) {
       return Status::OK();
     }
@@ -1698,7 +1726,6 @@ class DictDecoderImpl : public DecoderImpl, virtual public DictDecoder<Type> {
     dictionary_length_ = static_cast<int32_t>(dictionary->values_left());
     PARQUET_THROW_NOT_OK(dictionary_->Resize(dictionary_length_ * sizeof(T),
                                              /*shrink_to_fit=*/false));
-    // std::cout << "DecodeDict" << std::endl;
     dictionary->Decode(reinterpret_cast<T*>(dictionary_->mutable_data()),
                        dictionary_length_);
   }
@@ -1769,7 +1796,7 @@ void DictDecoderImpl<ByteArrayType>::SetDict(TypedDecoder<ByteArrayType>* dictio
 
 template <>
 inline void DictDecoderImpl<FLBAType>::SetDict(TypedDecoder<FLBAType>* dictionary) {
-  // std::cout << "DictDecoderImpl<FLBAType>::SetDict" << std::endl;
+  std::cout << "DictDecoderImpl<FLBAType>::SetDict" << std::endl;
   DecodeDict(dictionary);
 
   auto dict_values = reinterpret_cast<FLBA*>(dictionary_->mutable_data());
@@ -2085,7 +2112,7 @@ class DictByteArrayDecoderImpl : public DictDecoderImpl<ByteArrayType>,
 
     RETURN_NOT_OK(builder->Reserve(num_values));
     ::arrow::internal::BitmapReader bit_reader(valid_bits, valid_bits_offset, num_values);
-    // std::cout << "DecodeArrow" << std::endl;
+    std::cout << "DecodeArrow" << std::endl;
 
     auto dict_values = reinterpret_cast<const ByteArray*>(dictionary_->data());
 
@@ -2139,7 +2166,7 @@ class DictByteArrayDecoderImpl : public DictDecoderImpl<ByteArrayType>,
     int32_t indices[kBufferSize];
 
     RETURN_NOT_OK(builder->Reserve(num_values));
-    // std::cout << "DecodeArrowNonNull" << std::endl;
+    std::cout << "DecodeArrowNonNull" << std::endl;
 
     auto dict_values = reinterpret_cast<const ByteArray*>(dictionary_->data());
 
@@ -2188,13 +2215,15 @@ class DeltaBitPackDecoder : public DecoderImpl, virtual public TypedDecoder<DTyp
   }
 
 #ifdef ENABLE_QPL_ANALYSIS    
-  int DecodeAsync(T* buffer, int num_values, qpl_job** job, std::vector<uint8_t>** destination, T** out) override {
-    return num_values;
-  }
+  // int DecodeAsync(T* buffer, int num_values, qpl_job** job, std::vector<uint8_t>** destination, T** out) override {
+  //   std::cout << "DeltaBitPackDecoder::DecodeAsync" << std::endl;
+  //   return Decode(buffer, num_values);
+  // }
 
-  void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination) {
-    return;
-  }
+  // void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination) override {
+  //   std::cout << "DeltaBitPackDecoder::FillDecodedData" << std::endl;
+  //   return;
+  // }
 #endif
 
   int DecodeArrow(int num_values, int null_count, const uint8_t* valid_bits,
@@ -2374,13 +2403,15 @@ class DeltaLengthByteArrayDecoder : public DecoderImpl,
   }
 
 #ifdef ENABLE_QPL_ANALYSIS    
-  int DecodeAsync(T* buffer, int num_values, qpl_job** job, std::vector<uint8_t>** destination, T** out) override {
-    return num_values;
-  }
+  // int DecodeAsync(T* buffer, int num_values, qpl_job** job, std::vector<uint8_t>** destination, T** out) override {
+  //   std::cout << "DeltaLengthByteArrayDecoder::DecodeAsync" << std::endl;
+  //   return Decode(buffer, num_values);
+  // }
 
-  void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination) {
-    return;
-  }
+  // void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination)  override {
+  //   std::cout << "DeltaLengthByteArrayDecoder::FillDecodedData" << std::endl;
+  //   return;
+  // }
 #endif
 
   int DecodeArrow(int num_values, int null_count, const uint8_t* valid_bits,
@@ -2447,15 +2478,12 @@ class DeltaByteArrayDecoder : public DecoderImpl,
     return max_values;
   }
 
-#ifdef ENABLE_QPL_ANALYSIS    
-  int DecodeAsync(T* buffer, int num_values, qpl_job** job, std::vector<uint8_t>** destination, T** out) override {
-    return num_values;
-  }
-  
-  void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination) {
-    return;
-  }
-#endif
+// #ifdef ENABLE_QPL_ANALYSIS    
+//   void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination) override {
+//     std::cout << "DeltaByteArrayDecoder::FillDecodedData" << std::endl;
+//     return;
+//   }
+// #endif
 
  private:
   DeltaBitPackDecoder<Int32Type> prefix_len_decoder_;
@@ -2473,14 +2501,16 @@ class ByteStreamSplitDecoder : public DecoderImpl, virtual public TypedDecoder<D
   explicit ByteStreamSplitDecoder(const ColumnDescriptor* descr);
 
   int Decode(T* buffer, int max_values) override;
-#ifdef ENABLE_QPL_ANALYSIS      
-  int DecodeAsync(T* buffer, int num_values, qpl_job** job, std::vector<uint8_t>** destination, T** out) override {
-    return num_values;
-  }
 
-  void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination) {
-    return;
-  }
+#ifdef ENABLE_QPL_ANALYSIS      
+// int DecodeAsync(T* buffer, int num_values, qpl_job** job, std::vector<uint8_t>** destination, T** out) override {
+//   return Decode(buffer, num_values);
+// }
+
+  // void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination) override {
+  //   std::cout << "ByteStreamSplitDecoder::FillDecodedData" << std::endl;
+  //   return;
+  // }
 #endif  
 
   int DecodeArrow(int num_values, int null_count, const uint8_t* valid_bits,

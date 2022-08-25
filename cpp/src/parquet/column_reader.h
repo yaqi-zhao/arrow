@@ -19,8 +19,10 @@
 
 #include <cstdint>
 #include <memory>
+#include <random>
 #include <utility>
 #include <vector>
+#include <iostream>
 
 #include "parquet/exception.h"
 #include "parquet/level_conversion.h"
@@ -51,6 +53,42 @@ namespace parquet {
 
 class Decryptor;
 class Page;
+
+
+
+#ifdef ENABLE_QPL_ANALYSIS
+/// QplJobHWPool is resource pool to provide the job objects.
+/// Job object is used for storing context information during offloading compression job to HW Accelerator.
+class QplJobHWPool
+{
+public:
+    QplJobHWPool();
+    ~QplJobHWPool();
+
+    static QplJobHWPool & instance();
+
+    qpl_job * acquireJob(uint32_t & job_id);
+    static void releaseJob(uint32_t job_id);
+    static const bool & isJobPoolReady() { return job_pool_ready; }
+
+private:
+    static bool tryLockJob(uint32_t index);
+    static void unLockJob(uint32_t index);
+
+    /// Maximum jobs running in parallel supported by IAA hardware
+    static constexpr auto MAX_HW_JOB_NUMBER = 512;
+    /// Entire buffer for storing all job objects
+    static std::unique_ptr<uint8_t[]> hw_jobs_buffer;
+    /// Job pool for storing all job object pointers
+    static std::array<qpl_job *, MAX_HW_JOB_NUMBER> hw_job_ptr_pool;
+    /// Locks for accessing each job object pointers
+    static std::array<std::atomic_bool, MAX_HW_JOB_NUMBER> hw_job_ptr_locks;
+    static bool job_pool_ready;
+    std::mt19937 random_engine;
+    std::uniform_int_distribution<int> distribution;
+};
+#endif
+
 
 // 16 MB is the default maximum page header size
 static constexpr uint32_t kDefaultMaxPageHeaderSize = 16 * 1024 * 1024;
@@ -269,13 +307,18 @@ class RecordReader {
   /// \brief Attempt to read indicated number of records from column chunk
   /// \return number of records read
   virtual int64_t ReadRecords(int64_t num_records) = 0;
+  virtual void test() = 0;
 
 #ifdef ENABLE_QPL_ANALYSIS
   virtual int64_t ReadRecordsAsync(int64_t num_records, size_t row_group_index) = 0;
   virtual void InitAsyncVector(int64_t capacity) = 0;
   virtual std::vector<qpl_job*> & GetQplJobs() = 0;
   virtual std::vector<std::vector<uint8_t>*> & GetDestinations() = 0;
-  virtual void FillOutData(size_t row_group_idx, int64_t records_read) = 0;
+  virtual void AddDictionaryData(int64_t index) = 0;
+  virtual void FillOutData(size_t row_group_idx, int64_t records_read) {
+    std::cout << "RecordReader FillOutData" << std::endl;
+    return;
+  }
   virtual void FreeAsyncVector(int64_t capacity) = 0;
 #endif
   /// \brief Pre-allocate space for data. Results in better flat read performance
@@ -294,7 +337,7 @@ class RecordReader {
   virtual std::shared_ptr<ResizableBuffer> ReleaseIsValid() = 0;
 
   /// \brief Return true if the record reader has more internal data yet to
-  /// process
+  /// process 
   virtual bool HasMoreData() const = 0;
 
   /// \brief Advance record reader to the next row group

@@ -22,11 +22,14 @@
 #include <functional>
 #include <memory>
 #include <vector>
+#include <random>
 
 #include "parquet/file_reader.h"
 #include "parquet/platform.h"
 #include "parquet/properties.h"
-
+#ifdef ENABLE_QPL_ANALYSIS
+#include "qpl/qpl.h"
+#endif
 namespace arrow {
 
 class ChunkedArray;
@@ -50,6 +53,8 @@ class ColumnChunkReader;
 class ColumnReader;
 struct SchemaManifest;
 class RowGroupReader;
+
+
 
 /// \brief Arrow read adapter class for deserializing Parquet files as Arrow row batches.
 ///

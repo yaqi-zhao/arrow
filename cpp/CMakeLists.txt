@@ -54,7 +54,7 @@ string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" ARROW_BASE_VERSION "${ARROW_VERSI
 # if no build build type is specified, default to release builds
 if(NOT DEFINED CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE
-      Debug
+      Release
       CACHE STRING "Choose the type of build.")
 endif()
 string(TOLOWER ${CMAKE_BUILD_TYPE} LOWERCASE_BUILD_TYPE)

@@ -307,8 +307,8 @@ class FileReaderImpl : public FileReader {
     // std::cout << "ReadColumn, recores_to_read: " << row_groups.size()  << std::endl;
 
 #ifdef ENABLE_QPL_ANALYSIS
-    // return reader->NextBatchAsync(records_to_read, out, row_group_records);
-    return reader->NextBatch(records_to_read, out);
+    return reader->NextBatchAsync(records_to_read, out, row_group_records);
+    // return reader->NextBatch(records_to_read, out);
 #else    
     return reader->NextBatch(records_to_read, out);
 #endif   
@@ -541,8 +541,6 @@ processMem_t GetProcessMemory() {
     // Pre-allocation gives much better performance for flat columns
     record_reader_->Reserve(records_to_read);
     record_reader_->InitAsyncVector(row_groups_records.size());
-    // std::cout<<"MemFree start: "<< GetProcessMemory().physicalMem<<std::endl;
-    // std::cout<<"virtualMem start: "<< GetProcessMemory().virtualMem<<std::endl;
 
     size_t row_group_idx = 0;
     while (records_to_read > 0) {
@@ -551,6 +549,7 @@ processMem_t GetProcessMemory() {
       }
       int64_t records_read = record_reader_->ReadRecordsAsync(records_to_read, row_group_idx);
       records_to_read -= row_groups_records[row_group_idx];
+      record_reader_->AddDictionaryData(row_group_idx);
       
         NextRowGroup();
       ++row_group_idx;
@@ -560,15 +559,15 @@ processMem_t GetProcessMemory() {
     // auto threads      = std::vector<std::thread>(qpl_jobs.size());
     for (size_t i = 0; i < qpl_jobs.size(); ++i) {
       // auto wait_start = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+      if (qpl_jobs[i] == nullptr) {
+        continue;
+      }
         qpl_wait_job(qpl_jobs[i]);
         auto status = qpl_fini_job(qpl_jobs[i]);
         if (status != QPL_STS_OK) {
           throw std::runtime_error("An error acquired during job finalization with Async.");
         }
-        // threads[i] = std::thread([&row_groups_records, this](uint32_t i) {
-        //   record_reader_->FillOutData(i, row_groups_records[i]);
-        // }, i);
-        // threads[i].join();
+        record_reader_->test();
         record_reader_->FillOutData(i, row_groups_records[i]);
         record_reader_->FreeAsyncVector(i);
     }
@@ -576,8 +575,6 @@ processMem_t GetProcessMemory() {
 
       // record_reader_->FreeAsyncVector(qpl_jobs.size());
 
-    // std::cout<<"MemFree end: "<< GetProcessMemory().physicalMem<<std::endl;
-    // std::cout<<"virtualMem end: "<< GetProcessMemory().virtualMem<<std::endl;
     RETURN_NOT_OK(TransferColumnData(record_reader_.get(), field_->type(), descr_,
                                      ctx_->pool, &out_));
     return Status::OK();
@@ -1317,6 +1314,8 @@ Status FileReaderImpl::ReadRowGroups(const std::vector<int>& row_groups,
   ARROW_ASSIGN_OR_RAISE(*out, fut.MoveResult());
   return Status::OK();
 }
+
+
 
 Future<std::shared_ptr<Table>> FileReaderImpl::DecodeRowGroups(
     std::shared_ptr<FileReaderImpl> self, const std::vector<int>& row_groups,
