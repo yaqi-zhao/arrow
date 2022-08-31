@@ -288,6 +288,12 @@ class PARQUET_EXPORT ColumnReader {
   // the data available in the file.
   virtual ::arrow::Status NextBatch(int64_t batch_size,
                                     std::shared_ptr<::arrow::ChunkedArray>* out) = 0;
+
+#ifdef ENABLE_QPL_ANALYSIS                                    
+  virtual ::arrow::Status NextBatchAsync(int64_t batch_size,
+                                    std::shared_ptr<::arrow::ChunkedArray>* out,
+                                    std::vector<int64_t>& row_groups_recores) = 0;
+#endif   
 };
 
 /// \brief Experimental helper class for bindings (like Python) that struggle

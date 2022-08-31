@@ -536,6 +536,12 @@ if(ARROW_ORC)
        adapters/orc/util.cc)
 endif()
 
+if(ENABLE_QPL)
+  set (QPL_PROJECT_DIR "${PROJECT_SOURCE_DIR}/submodules/qpl")
+  set(QPL_LINK_LIBS "${QPL_PROJECT_DIR}/include/qpl")
+  list(APPEND ARROW_SRCS ${QPL_LINK_LIBS})
+endif()
+
 if(CXX_LINKER_SUPPORTS_VERSION_SCRIPT)
   set(ARROW_VERSION_SCRIPT_FLAGS
       "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/symbols.map")

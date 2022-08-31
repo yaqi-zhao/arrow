@@ -399,6 +399,12 @@ if(ARROW_PARQUET)
   set(ARROW_COMPUTE ON)
 endif()
 
+if(ENABLE_QPL)
+  add_subdirectory(build-support/qpl-cmake)
+  add_definitions(-DENABLE_QPL_ANALYSIS)
+  message("ENABLE_QPL_ANALYSIS" ${ENABLE_QPL_ANALYSIS})
+endif()
+
 if(ARROW_PYTHON)
   set(ARROW_COMPUTE ON)
   set(ARROW_CSV ON)
@@ -606,6 +612,12 @@ message(STATUS "CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/src)
 include_directories(src)
+
+if(ENABLE_QPL)
+  set (QPL_PROJECT_DIR "${PROJECT_SOURCE_DIR}/submodules/qpl")
+  include_directories(${QPL_PROJECT_DIR})
+  include_directories(${QPL_PROJECT_DIR}/include)
+endif()
 
 # Compiled flatbuffers files
 include_directories(src/generated)
@@ -1024,6 +1036,11 @@ install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../LICENSE.txt
               ${CMAKE_CURRENT_SOURCE_DIR}/README.md DESTINATION "${ARROW_DOC_DIR}")
 
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/gdb_arrow.py DESTINATION "${ARROW_GDB_DIR}")
+
+if(ENABLE_QPL)
+  list(APPEND ARROW_LINK_LIBS ch_contrib::qpl)
+  list(APPEND ARROW_STATIC_LINK_LIBS ch_contrib::qpl)
+endif()
 
 #
 # Validate and print out Arrow configuration options

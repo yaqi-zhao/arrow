@@ -190,6 +190,15 @@ class BitReader {
   /// Maximum byte length of a vlq encoded int64
   static constexpr int kMaxVlqByteLengthForInt64 = 10;
 
+  const uint8_t * getBuffer() {
+    return buffer_;
+  }
+
+  int getBufferLen() {
+    return max_bytes_;
+  }
+
+
  private:
   const uint8_t* buffer_;
   int max_bytes_;
@@ -398,6 +407,7 @@ inline int BitReader::GetBatch(int num_bits, T* v, int batch_size) {
   return batch_size;
 }
 
+#ifndef ENABLE_QPL_ANALYSIS
 template <typename T>
 inline bool BitReader::GetAligned(int num_bytes, T* v) {
   if (ARROW_PREDICT_FALSE(num_bytes > static_cast<int>(sizeof(T)))) {
@@ -420,6 +430,32 @@ inline bool BitReader::GetAligned(int num_bytes, T* v) {
                                &buffered_values_);
   return true;
 }
+
+#else
+
+template <typename T>
+inline bool BitReader::GetAligned(int num_bytes, T* v) {
+  if (ARROW_PREDICT_FALSE(num_bytes > static_cast<int>(sizeof(T)))) {
+    return false;
+  }
+
+  int bytes_read = static_cast<int>(bit_util::BytesForBits(bit_offset_));
+  if (ARROW_PREDICT_FALSE(byte_offset_ + bytes_read + num_bytes > max_bytes_ + 1)) {
+    return false;
+  }
+
+  // Advance byte_offset to next unread byte and read num_bytes
+  byte_offset_ += bytes_read;
+  memcpy(v, buffer_ + byte_offset_ - 1, num_bytes);
+  *v = arrow::bit_util::FromLittleEndian(*v);
+  byte_offset_ += num_bytes;
+
+  bit_offset_ = 0;
+  detail::ResetBufferedValues_(buffer_ - 1, byte_offset_, max_bytes_ - byte_offset_ + 1,
+                               &buffered_values_);
+  return true;
+}
+#endif
 
 inline bool BitReader::Advance(int64_t num_bits) {
   int64_t bits_required = bit_offset_ + num_bits;

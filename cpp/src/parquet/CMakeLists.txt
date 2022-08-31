@@ -127,7 +127,10 @@ set(PARQUET_SHARED_TEST_LINK_LIBS arrow_testing_shared ${PARQUET_MIN_TEST_LIBS}
 
 set(PARQUET_STATIC_TEST_LINK_LIBS ${PARQUET_MIN_TEST_LIBS} parquet_static thrift::thrift
                                   ${ARROW_LIBRARIES_FOR_STATIC_TESTS})
-
+if(ENABLE_QPL)
+  list(APPEND PARQUET_STATIC_TEST_LINK_LIBS ch_contrib::qpl)
+  list(APPEND PARQUET_SHARED_TEST_LINK_LIBS ch_contrib::qpl)
+endif()
 #
 # Generated Thrift sources
 set_source_files_properties(src/generated/parquet_types.cpp src/generated/parquet_types.h
@@ -229,6 +232,14 @@ if(CXX_LINKER_SUPPORTS_VERSION_SCRIPT)
       "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/symbols.map")
 endif()
 
+if(ENABLE_QPL)
+  set (QPL_PROJECT_DIR "${PROJECT_SOURCE_DIR}/submodules/qpl")
+  set(QPL_LINK_LIBS "${QPL_PROJECT_DIR}/include/qpl")
+  list(APPEND PARQUET_SRCS ${QPL_LINK_LIBS})
+  list(APPEND PARQUET_STATIC_LINK_LIBS ch_contrib::qpl)
+  # list(APPEND PARQUET_STATIC_INTERFACE_INSTALL_LIBS ch_contrib::qpl)  
+endif()
+
 add_arrow_lib(parquet
               CMAKE_PACKAGE_NAME
               Parquet
@@ -275,6 +286,10 @@ if(ARROW_BUILD_STATIC AND WIN32)
 endif()
 
 add_dependencies(parquet ${PARQUET_LIBRARIES} thrift::thrift)
+if (ENABLE_QPL)
+  add_dependencies(parquet ch_contrib::qpl)
+  # target_link_libraries(parquet_test_support ch_contrib::qpl)
+endif()
 
 add_definitions(-DPARQUET_THRIFT_VERSION_MAJOR=${Thrift_VERSION_MAJOR})
 add_definitions(-DPARQUET_THRIFT_VERSION_MINOR=${Thrift_VERSION_MINOR})

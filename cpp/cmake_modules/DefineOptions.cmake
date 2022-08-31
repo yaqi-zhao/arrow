@@ -274,6 +274,8 @@ if(ARROW_DEFINE_OPTIONS)
 
   define_option(ARROW_PARQUET "Build the Parquet libraries" OFF)
 
+  define_option(ENABLE_QPL "Enable Intel® Query Processing Library" OFF)
+  
   define_option(ARROW_ORC "Build the Arrow ORC adapter" OFF)
 
   define_option(ARROW_PLASMA "Build the plasma object store along with Arrow" OFF)
