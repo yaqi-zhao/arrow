@@ -292,7 +292,7 @@ class PARQUET_EXPORT ColumnReader {
 #ifdef ENABLE_QPL_ANALYSIS                                    
   virtual ::arrow::Status NextBatchAsync(int64_t batch_size,
                                     std::shared_ptr<::arrow::ChunkedArray>* out,
-                                    std::vector<int64_t>& row_groups_recores) = 0;
+                                    std::vector<int64_t>& row_groups_records) = 0;
 #endif   
 };
 

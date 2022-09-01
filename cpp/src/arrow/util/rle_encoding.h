@@ -136,8 +136,13 @@ class RleDecoder {
   template <typename T>
   int GetBatchWithDict(const T* dictionary, int32_t dictionary_length, T* values,
                        int batch_size);
+  template <typename T>
+  int GetBatchWithDictQpl(const T* dictionary, int32_t dictionary_length, T* values,
+                       int batch_size);
 
 #ifdef ENABLE_QPL_ANALYSIS
+  template <typename T>
+  int GetBatchWithQpl(T* values, int batch_size);
   template <typename T>
   int GetBatchAsync(const T* dictionary, int32_t dictionary_length,
                                         T* values, int batch_size, T** out, qpl_job** job, std::vector<uint8_t>** destination);                                       
@@ -312,7 +317,7 @@ inline bool RleDecoder::Get(T* val) {
   return GetBatch(val, 1) == 1;
 }
 
-#ifndef ENABLE_QPL_ANALYSIS
+
 template <typename T>
 inline int RleDecoder::GetBatch(T* values, int batch_size) {
   DCHECK_GE(bit_width_, 0);
@@ -349,43 +354,44 @@ inline int RleDecoder::GetBatch(T* values, int batch_size) {
 }
 
 
-#else
+#ifdef ENABLE_QPL_ANALYSIS
 
 template <typename T>
-inline int RleDecoder::GetBatch(T* values, int batch_size) {
+inline int RleDecoder::GetBatchWithQpl(T* values, int batch_size) {
   DCHECK_GE(bit_width_, 0);
-  if (bit_width_ == 1) {
-    int values_read = 0;
+  std::cout << "GetBatch " << bit_width_ << std::endl;
+  // if (bit_width_ == 1) {
+  //   int values_read = 0;
 
-    auto* out = values;
+  //   auto* out = values;
 
-    while (values_read < batch_size) {
-      int remaining = batch_size - values_read;
+  //   while (values_read < batch_size) {
+  //     int remaining = batch_size - values_read;
 
-      if (repeat_count_ > 0) {  // Repeated value case.
-        int repeat_batch = std::min(remaining, repeat_count_);
-        std::fill(out, out + repeat_batch, static_cast<T>(current_value_));
+  //     if (repeat_count_ > 0) {  // Repeated value case.
+  //       int repeat_batch = std::min(remaining, repeat_count_);
+  //       std::fill(out, out + repeat_batch, static_cast<T>(current_value_));
 
-        repeat_count_ -= repeat_batch;
-        values_read += repeat_batch;
-        out += repeat_batch;
-      } else if (literal_count_ > 0) {
-        int literal_batch = std::min(remaining, literal_count_);
-        int actual_read = bit_reader_.GetBatch(bit_width_, out, literal_batch);
-        if (actual_read != literal_batch) {
-          return values_read;
-        }
+  //       repeat_count_ -= repeat_batch;
+  //       values_read += repeat_batch;
+  //       out += repeat_batch;
+  //     } else if (literal_count_ > 0) {
+  //       int literal_batch = std::min(remaining, literal_count_);
+  //       int actual_read = bit_reader_.GetBatch(bit_width_, out, literal_batch);
+  //       if (actual_read != literal_batch) {
+  //         return values_read;
+  //       }
 
-        literal_count_ -= literal_batch;
-        values_read += literal_batch;
-        out += literal_batch;
-      } else {
-        if (!NextCounts<T>()) return values_read;
-      }
-    }
+  //       literal_count_ -= literal_batch;
+  //       values_read += literal_batch;
+  //       out += literal_batch;
+  //     } else {
+  //       if (!NextCounts<T>()) return values_read;
+  //     }
+  //   }
 
-    return values_read;
-  }
+  //   return values_read;
+  // }
 
     qpl_job    *job;
     qpl_status status;
@@ -649,7 +655,7 @@ struct DictionaryConverter {
   }
 };
 
-#ifndef ENABLE_QPL_ANALYSIS
+
 template <typename T>
 inline int RleDecoder::GetBatchWithDict(const T* dictionary, int32_t dictionary_length,
                                         T* values, int batch_size) {
@@ -710,11 +716,68 @@ inline int RleDecoder::GetBatchWithDict(const T* dictionary, int32_t dictionary_
   return values_read;
 }
 
-#else
+
+#ifdef ENABLE_QPL_ANALYSIS
 template <typename T>
-inline int RleDecoder::GetBatchWithDict(const T* dictionary, int32_t dictionary_length,
+inline int RleDecoder::GetBatchWithDictQpl(const T* dictionary, int32_t dictionary_length,
                                         T* values, int batch_size) {
-    // std::cout << "RleDecoder::GetBatchWithDictEqual, dictionary_length: " << dictionary_length << std::endl;
+    // std::cout << "GetBatchWithDict bit_width: " << bit_width_ << std::endl;
+    if (bit_width_ == 1) {
+      
+      using IndexType = int32_t;
+      DictionaryConverter<T> converter;
+      converter.dictionary = dictionary;
+      converter.dictionary_length = dictionary_length;
+
+      DCHECK_GE(bit_width_, 0);
+      int values_read = 0;
+
+      auto* out = values;
+
+      while (values_read < batch_size) {
+        int remaining = batch_size - values_read;
+
+        if (repeat_count_ > 0) {
+          auto idx = static_cast<IndexType>(current_value_);
+          if (ARROW_PREDICT_FALSE(!IndexInRange(idx, dictionary_length))) {
+            return values_read;
+          }
+          T val = dictionary[idx];
+
+          int repeat_batch = std::min(remaining, repeat_count_);
+          std::fill(out, out + repeat_batch, val);
+
+          /* Upkeep counters */
+          repeat_count_ -= repeat_batch;
+          values_read += repeat_batch;
+          out += repeat_batch;
+        } else if (literal_count_ > 0) {
+          constexpr int kBufferSize = 1024;
+          IndexType indices[kBufferSize];
+
+          int literal_batch = std::min(remaining, literal_count_);
+          literal_batch = std::min(literal_batch, kBufferSize);
+
+          int actual_read = bit_reader_.GetBatch(bit_width_, indices, literal_batch);
+          if (ARROW_PREDICT_FALSE(actual_read != literal_batch)) {
+            return values_read;
+          }
+          if (ARROW_PREDICT_FALSE(!converter.IsValid(indices, /*length=*/literal_batch))) {
+            return values_read;
+          }
+          converter.Copy(out, indices, literal_batch);
+
+          /* Upkeep counters */
+          literal_count_ -= literal_batch;
+          values_read += literal_batch;
+          out += literal_batch;
+        } else {
+          if (!NextCounts<IndexType>()) return values_read;
+        }
+      }
+
+      return values_read;
+    }
     qpl_job    *job;
     qpl_status status;
     uint32_t size = 0;
@@ -792,6 +855,7 @@ inline int RleDecoder::GetBatchAsync(const T* dictionary, int32_t dictionary_len
     // }
 
     *destination = new std::vector<uint8_t>(batch_size * 4, 0);
+    // std::cout << "GetBatchAsync destination len: " << batch_size * 4 << ", batch_size: " << batch_size << std::endl;
     // if (dictionary_length < 0xFF) {
     //   async_job->out_bit_width      = qpl_ow_8;  
     //   *destination = new std::vector<uint8_t>(batch_size, 0);

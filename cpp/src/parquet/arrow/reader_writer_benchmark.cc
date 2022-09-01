@@ -324,6 +324,7 @@ BENCHMARK_TEMPLATE2(BM_ReadColumn, true, BooleanType)
 //
 
 const std::vector<int64_t> kNestedNullPercents = {0, 1, 50, 99};
+// const std::vector<int64_t> kNestedNullPercents = {0};
 
 // XXX We can use ArgsProduct() starting from Benchmark 1.5.2
 static void NestedReadArguments(::benchmark::internal::Benchmark* b) {

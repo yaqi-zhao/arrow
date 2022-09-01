@@ -191,11 +191,13 @@ class BitReader {
   static constexpr int kMaxVlqByteLengthForInt64 = 10;
 
   const uint8_t * getBuffer() {
-    return buffer_;
+    return buffer_ - 1;
+    // return buffer_;
   }
 
   int getBufferLen() {
-    return max_bytes_;
+    return max_bytes_ + 1;
+    // return max_bytes_;
   }
 
 
@@ -322,6 +324,7 @@ inline bool BitReader::GetValue(int num_bits, T* v) {
   return GetBatch(num_bits, v, 1) == 1;
 }
 
+// #ifndef ENABLE_QPL_ANALYSIS
 template <typename T>
 inline int BitReader::GetBatch(int num_bits, T* v, int batch_size) {
   DCHECK(buffer_ != NULL);
@@ -407,7 +410,95 @@ inline int BitReader::GetBatch(int num_bits, T* v, int batch_size) {
   return batch_size;
 }
 
-#ifndef ENABLE_QPL_ANALYSIS
+// #else
+// template <typename T>
+// inline int BitReader::GetBatch(int num_bits, T* v, int batch_size) {
+//   DCHECK(buffer_ != NULL);
+//   DCHECK_LE(num_bits, static_cast<int>(sizeof(T) * 8));
+
+//   int bit_offset = bit_offset_;
+//   int byte_offset = byte_offset_;
+//   uint64_t buffered_values = buffered_values_;
+//   int max_bytes = max_bytes_ - 1;
+//   const uint8_t* buffer = buffer_ + 1;
+
+//   const int64_t needed_bits = num_bits * static_cast<int64_t>(batch_size);
+//   constexpr uint64_t kBitsPerByte = 8;
+//   const int64_t remaining_bits =
+//       static_cast<int64_t>(max_bytes - byte_offset) * kBitsPerByte - bit_offset;
+//   if (remaining_bits < needed_bits) {
+//     batch_size = static_cast<int>(remaining_bits / num_bits);
+//   }
+
+//   int i = 0;
+//   if (ARROW_PREDICT_FALSE(bit_offset != 0)) {
+//     for (; i < batch_size && bit_offset != 0; ++i) {
+//       detail::GetValue_(num_bits, &v[i], max_bytes, buffer, &bit_offset, &byte_offset,
+//                         &buffered_values);
+//     }
+//   }
+
+//   if (sizeof(T) == 4) {
+//     int num_unpacked =
+//         internal::unpack32(reinterpret_cast<const uint32_t*>(buffer + byte_offset),
+//                            reinterpret_cast<uint32_t*>(v + i), batch_size - i, num_bits);
+//     i += num_unpacked;
+//     byte_offset += num_unpacked * num_bits / 8;
+//   } else if (sizeof(T) == 8 && num_bits > 32) {
+//     // Use unpack64 only if num_bits is larger than 32
+//     // TODO (ARROW-13677): improve the performance of internal::unpack64
+//     // and remove the restriction of num_bits
+//     int num_unpacked =
+//         internal::unpack64(buffer + byte_offset, reinterpret_cast<uint64_t*>(v + i),
+//                            batch_size - i, num_bits);
+//     i += num_unpacked;
+//     byte_offset += num_unpacked * num_bits / 8;
+//   } else {
+//     // TODO: revisit this limit if necessary
+//     DCHECK_LE(num_bits, 32);
+//     const int buffer_size = 1024;
+//     uint32_t unpack_buffer[buffer_size];
+//     while (i < batch_size) {
+//       int unpack_size = std::min(buffer_size, batch_size - i);
+//       int num_unpacked =
+//           internal::unpack32(reinterpret_cast<const uint32_t*>(buffer + byte_offset),
+//                              unpack_buffer, unpack_size, num_bits);
+//       if (num_unpacked == 0) {
+//         break;
+//       }
+//       for (int k = 0; k < num_unpacked; ++k) {
+// #ifdef _MSC_VER
+// #pragma warning(push)
+// #pragma warning(disable : 4800)
+// #endif
+//         v[i + k] = static_cast<T>(unpack_buffer[k]);
+// #ifdef _MSC_VER
+// #pragma warning(pop)
+// #endif
+//       }
+//       i += num_unpacked;
+//       byte_offset += num_unpacked * num_bits / 8;
+//     }
+//   }
+
+//   detail::ResetBufferedValues_(buffer, byte_offset, max_bytes - byte_offset,
+//                                &buffered_values);
+
+//   for (; i < batch_size; ++i) {
+//     detail::GetValue_(num_bits, &v[i], max_bytes, buffer, &bit_offset, &byte_offset,
+//                       &buffered_values);
+//   }
+
+//   bit_offset_ = bit_offset;
+//   byte_offset_ = byte_offset;
+//   buffered_values_ = buffered_values;
+
+//   return batch_size;
+// }
+
+// #endif
+
+// #ifndef ENABLE_QPL_ANALYSIS
 template <typename T>
 inline bool BitReader::GetAligned(int num_bytes, T* v) {
   if (ARROW_PREDICT_FALSE(num_bytes > static_cast<int>(sizeof(T)))) {
@@ -431,31 +522,31 @@ inline bool BitReader::GetAligned(int num_bytes, T* v) {
   return true;
 }
 
-#else
+// #else
 
-template <typename T>
-inline bool BitReader::GetAligned(int num_bytes, T* v) {
-  if (ARROW_PREDICT_FALSE(num_bytes > static_cast<int>(sizeof(T)))) {
-    return false;
-  }
+// template <typename T>
+// inline bool BitReader::GetAligned(int num_bytes, T* v) {
+//   if (ARROW_PREDICT_FALSE(num_bytes > static_cast<int>(sizeof(T)))) {
+//     return false;
+//   }
 
-  int bytes_read = static_cast<int>(bit_util::BytesForBits(bit_offset_));
-  if (ARROW_PREDICT_FALSE(byte_offset_ + bytes_read + num_bytes > max_bytes_ + 1)) {
-    return false;
-  }
+//   int bytes_read = static_cast<int>(bit_util::BytesForBits(bit_offset_));
+//   if (ARROW_PREDICT_FALSE(byte_offset_ + bytes_read + num_bytes > max_bytes_ - 1)) {
+//     return false;
+//   }
 
-  // Advance byte_offset to next unread byte and read num_bytes
-  byte_offset_ += bytes_read;
-  memcpy(v, buffer_ + byte_offset_ - 1, num_bytes);
-  *v = arrow::bit_util::FromLittleEndian(*v);
-  byte_offset_ += num_bytes;
+//   // Advance byte_offset to next unread byte and read num_bytes
+//   byte_offset_ += bytes_read;
+//   memcpy(v, buffer_ + byte_offset_ + 1, num_bytes);
+//   *v = arrow::bit_util::FromLittleEndian(*v);
+//   byte_offset_ += num_bytes;
 
-  bit_offset_ = 0;
-  detail::ResetBufferedValues_(buffer_ - 1, byte_offset_, max_bytes_ - byte_offset_ + 1,
-                               &buffered_values_);
-  return true;
-}
-#endif
+//   bit_offset_ = 0;
+//   detail::ResetBufferedValues_(buffer_ + 1, byte_offset_, max_bytes_ - byte_offset_ - 1,
+//                                &buffered_values_);
+//   return true;
+// }
+// #endif
 
 inline bool BitReader::Advance(int64_t num_bits) {
   int64_t bits_required = bit_offset_ + num_bits;

@@ -116,8 +116,8 @@ class ColumnReaderImpl : public ColumnReader {
 
 #ifdef ENABLE_QPL_ANALYSIS    
   ::arrow::Status NextBatchAsync(int64_t batch_size,
-                            std::shared_ptr<::arrow::ChunkedArray>* out, std::vector<int64_t>& row_groups_recores) final {
-    RETURN_NOT_OK(LoadBatchAsync(batch_size, row_groups_recores));
+                            std::shared_ptr<::arrow::ChunkedArray>* out, std::vector<int64_t>& row_groups_records) final {
+    RETURN_NOT_OK(LoadBatchAsync(batch_size, row_groups_records));
     RETURN_NOT_OK(BuildArray(batch_size, out));
     for (int x = 0; x < (*out)->num_chunks(); x++) {
       RETURN_NOT_OK((*out)->chunk(x)->Validate());
@@ -308,8 +308,8 @@ class FileReaderImpl : public FileReader {
 #endif
     
 #ifdef ENABLE_QPL_ANALYSIS
-    return reader->NextBatchAsync(records_to_read, out, row_group_records);
-    // return reader->NextBatch(records_to_read, out);
+    // return reader->NextBatchAsync(records_to_read, out, row_group_records);
+    return reader->NextBatch(records_to_read, out);
 #else    
     return reader->NextBatch(records_to_read, out);
 #endif       
@@ -538,31 +538,31 @@ class LeafReader : public ColumnReaderImpl {
       if (!record_reader_->HasMoreData()) {
         break;
       }
+      // std::cout << "LoadBatchAsync row_groups_records " << row_group_idx << ", records: " << row_groups_records[row_group_idx] << ", records_to_read: " << records_to_read << std::endl;
       int64_t records_read = record_reader_->ReadRecordsAsync(records_to_read, row_group_idx);
       if (records_read != row_groups_records[row_group_idx]) {
         std::runtime_error("row_groups_records[row_group_idx] error");
       }
       records_to_read -= row_groups_records[row_group_idx];
-      record_reader_->AddDictionaryData(row_group_idx);
+      // record_reader_->AddDictionaryData(row_group_idx);
       
         NextRowGroup();
       ++row_group_idx;
     }
 
-    auto qpl_jobs = record_reader_->GetQplJobs();
-    // auto threads      = std::vector<std::thread>(qpl_jobs.size());
-    for (size_t i = 0; i < qpl_jobs.size(); ++i) {
-      // auto wait_start = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-      if (qpl_jobs[i] == nullptr) {
-        continue;
-      }
-        qpl_wait_job(qpl_jobs[i]);
-        auto status = qpl_fini_job(qpl_jobs[i]);
-        if (status != QPL_STS_OK) {
-          throw std::runtime_error("An error acquired during job finalization with Async.");
-        }
+    for (size_t i= 0; i < row_group_idx; ++i) {
+        // auto wait_start = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        // if (qpl_jobs[i][j].second == nullptr) {
+        //   continue;
+        // }
+        //   // qpl_wait_job(qpl_jobs[i][j].second);
+        //   // auto status = qpl_fini_job(qpl_jobs[i][j].second);
+        //   // if (status != QPL_STS_OK) {
+        //   //   throw std::runtime_error("An error acquired during job finalization with Async.");
+        //   // }
         record_reader_->FillOutData(i, row_groups_records[i]);
         record_reader_->FreeAsyncVector(i);
+
     }
 
 
@@ -612,7 +612,7 @@ class ExtensionReader : public ColumnReaderImpl {
 
 #ifdef ENABLE_QPL_ANALYSIS    
   Status LoadBatchAsync(int64_t records_to_read, std::vector<int64_t>& row_groups_records) final {
-    return Status::OK();
+    return LoadBatch(records_to_read);
   }
 #endif
 
@@ -662,7 +662,7 @@ class ListReader : public ColumnReaderImpl {
 
 #ifdef ENABLE_QPL_ANALYSIS    
   Status LoadBatchAsync(int64_t records_to_read, std::vector<int64_t>& row_groups_records) final {
-    return Status::OK();
+    return LoadBatch(records_to_read);
   }
 #endif
 
@@ -802,7 +802,11 @@ class PARQUET_NO_EXPORT StructReader : public ColumnReaderImpl {
 
 #ifdef ENABLE_QPL_ANALYSIS    
   Status LoadBatchAsync(int64_t records_to_read, std::vector<int64_t>& row_groups_records) override {
-    return Status::OK();
+    // return LoadBatch(records_to_read);
+    for (const std::unique_ptr<ColumnReaderImpl>& reader : children_) {
+      RETURN_NOT_OK(reader->LoadBatchAsync(records_to_read, row_groups_records));
+    }
+    return Status::OK();    
   }
 #endif
 

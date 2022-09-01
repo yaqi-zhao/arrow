@@ -374,9 +374,9 @@ class RecordReader {
 #ifdef ENABLE_QPL_ANALYSIS
   virtual int64_t ReadRecordsAsync(int64_t num_records, size_t row_group_index) = 0;
   virtual void InitAsyncVector(int64_t capacity) = 0;
-  virtual std::vector<qpl_job*> & GetQplJobs() = 0;
-  virtual std::vector<std::vector<uint8_t>*> & GetDestinations() = 0;
-  virtual void AddDictionaryData(int64_t index) = 0;
+  // std::map<size_t, std::vector<qpl_job_pair>> & GetQplJobs() = 0;
+  // virtual std::vector<std::vector<uint8_t>*> & GetDestinations() = 0;
+  // virtual void AddDictionaryData(int64_t index) = 0;
   virtual void FillOutData(size_t row_group_idx, int64_t records_read) {
     return;
   }
