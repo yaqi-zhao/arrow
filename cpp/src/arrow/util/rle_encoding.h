@@ -721,7 +721,7 @@ inline int RleDecoder::GetBatchWithDict(const T* dictionary, int32_t dictionary_
 template <typename T>
 inline int RleDecoder::GetBatchWithDictQpl(const T* dictionary, int32_t dictionary_length,
                                         T* values, int batch_size) {
-    // std::cout << "GetBatchWithDict bit_width: " << bit_width_ << std::endl;
+    std::cout << "GetBatchWithDict bit_width: " << bit_width_ << std::endl;
     if (bit_width_ == 1) {
       
       using IndexType = int32_t;
