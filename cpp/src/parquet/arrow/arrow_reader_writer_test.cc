@@ -4431,6 +4431,7 @@ class TestArrowReadDeltaEncoding : public ::testing::Test {
 };
 
 TEST_F(TestArrowReadDeltaEncoding, DeltaBinaryPacked) {
+  std::cout << "TestArrowReadDeltaEncoding, DeltaBinaryPacked" << std::endl;
   std::shared_ptr<::arrow::Table> actual_table, expect_table;
   ReadTableFromParquetFile("delta_binary_packed.parquet", &actual_table);
 

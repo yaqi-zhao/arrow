@@ -250,6 +250,9 @@ function(ADD_ARROW_LIB LIB_NAME)
     target_link_libraries(${LIB_NAME}_objlib
                           PRIVATE ${ARG_SHARED_LINK_LIBS} ${ARG_SHARED_PRIVATE_LINK_LIBS}
                                   ${ARG_STATIC_LINK_LIBS})
+    if (ENABLE_QPL)
+      target_link_libraries(${LIB_NAME}_objlib  PRIVATE ch_contrib::qpl)  
+    endif()                                  
   else()
     # Prepare arguments for separate compilation of static and shared libs below
     # TODO: add PCH directives
@@ -540,6 +543,10 @@ function(ADD_BENCHMARK REL_BENCHMARK_NAME)
     set(NO_COLOR "")
   endif()
 
+  if (ENABLE_QPL)
+  target_link_libraries(${BENCHMARK_NAME} PRIVATE ch_contrib::qpl)
+  endif()
+
   # With OSX and conda, we need to set the correct RPATH so that dependencies
   # are found. The installed libraries with conda have an RPATH that matches
   # for executables and libraries lying in $ENV{CONDA_PREFIX}/bin or
@@ -687,6 +694,10 @@ function(ADD_TEST_CASE REL_TEST_NAME)
     target_link_libraries(${TEST_NAME} PRIVATE ${ARG_EXTRA_LINK_LIBS})
   endif()
 
+  if(ENABLE_QPL)
+    target_link_libraries(${TEST_NAME} PUBLIC ch_contrib::qpl)
+  endif()
+  
   if(ARG_EXTRA_INCLUDES)
     target_include_directories(${TEST_NAME} SYSTEM PUBLIC ${ARG_EXTRA_INCLUDES})
   endif()

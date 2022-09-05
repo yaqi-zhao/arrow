@@ -25,6 +25,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <iostream>
 
 #include "arrow/array.h"
 #include "arrow/array/builder_dict.h"
@@ -49,6 +50,9 @@
 #include "parquet/platform.h"
 #include "parquet/schema.h"
 #include "parquet/types.h"
+#ifdef ENABLE_QPL_ANALYSIS
+#include <qpl/qpl.hpp>
+#endif
 
 namespace bit_util = arrow::bit_util;
 
@@ -1490,20 +1494,86 @@ class DictDecoderImpl : public DecoderImpl, virtual public DictDecoder<Type> {
       throw ParquetException("Invalid or corrupted bit_width " +
                              std::to_string(bit_width) + ". Maximum allowed is 32.");
     }
+#ifdef ENABLE_QPL_ANALYSIS
+    idx_decoder_ = ::arrow::util::RleDecoder(data, len, bit_width);
+    // idx_decoder_ = ::arrow::util::RleDecoder(++data, --len, bit_width);
+#else    
     idx_decoder_ = ::arrow::util::RleDecoder(++data, --len, bit_width);
+#endif    
   }
 
   int Decode(T* buffer, int num_values) override {
     num_values = std::min(num_values, num_values_);
-    int decoded_values =
-        idx_decoder_.GetBatchWithDict(reinterpret_cast<const T*>(dictionary_->data()),
+    int decoded_values = 0;
+#ifdef ENABLE_QPL_ANALYSIS
+      // decoded_values = idx_decoder_.GetBatchWithDictEqual(reinterpret_cast<const T*>(dictionary_->data()),
+      //                                 dictionary_length_, buffer, num_values);
+      decoded_values = idx_decoder_.GetBatchWithDictEqual(reinterpret_cast<const T*>(dictionary_->data()),
                                       dictionary_length_, buffer, num_values);
+#else
+        decoded_values = idx_decoder_.GetBatchWithDict(reinterpret_cast<const T*>(dictionary_->data()),
+                                       dictionary_length_, buffer, num_values);
+#endif
+
     if (decoded_values != num_values) {
       ParquetException::EofException();
     }
     num_values_ -= num_values;
     return num_values;
   }
+
+#ifdef ENABLE_QPL_ANALYSIS
+  int DecodeAsync(T* buffer, int num_values, qpl_job** job, std::vector<uint8_t>** destination, T** out) override {
+    num_values = std::min(num_values, num_values_);
+
+    int decoded_values;
+    decoded_values= idx_decoder_.GetBatchAsync(reinterpret_cast<const T*>(dictionary_->data()),
+                                  dictionary_length_, buffer, num_values, out, job, destination);
+        // decoded_values = idx_decoder_.GetBatchWithDict(reinterpret_cast<const T*>(dictionary_->data()),
+        //                               dictionary_length_, buffer, num_values);
+     if (decoded_values != num_values) {
+       ParquetException::EofException();
+     }
+     num_values_ -= num_values;
+    return num_values;
+  }
+  
+  void FillDecodedData(T* out, int num_values, std::vector<uint8_t>* destination) {
+    auto dictionary = reinterpret_cast<const T*>(dictionary_->data());
+    if (destination == nullptr) {
+      throw std::runtime_error("destination is nullptr.");
+    }
+    if (destination->size() / num_values == 4) {
+       auto *indices = reinterpret_cast<uint32_t *>(destination->data());
+      for (int j = 0; j < num_values; j++) {
+        uint32_t idx = static_cast<uint32_t>(indices[j]);
+        // std::cout << idx << std::endl;
+        T val = dictionary[idx];
+        std::fill(out, out+1, val);
+        out++;
+      }
+    } else if (destination->size() / num_values == 2) {
+      auto *indices = reinterpret_cast<uint16_t *>(destination->data());
+      for (int j = 0; j < num_values; j++) {
+        uint16_t idx = static_cast<uint16_t>(indices[j]);
+        // std::cout << idx << std::endl;
+        T val = dictionary[idx];
+        std::fill(out, out+1, val);
+        out++;
+      }
+    }  else {
+      auto *indices = reinterpret_cast<uint8_t *>(destination->data());
+      for (int j = 0; j < num_values; j++) {
+        uint8_t idx = static_cast<uint8_t>(indices[j]);
+        // std::cout << idx << std::endl;
+        T val = dictionary[idx];
+        std::fill(out, out+1, val);
+        out++;
+      }
+    }
+    return;
+   }
+#endif
 
   int DecodeSpaced(T* buffer, int num_values, int null_count, const uint8_t* valid_bits,
                    int64_t valid_bits_offset) override {
@@ -1591,6 +1661,9 @@ class DictDecoderImpl : public DecoderImpl, virtual public DictDecoder<Type> {
   void GetDictionary(const T** dictionary, int32_t* dictionary_length) override {
     *dictionary_length = dictionary_length_;
     *dictionary = reinterpret_cast<T*>(dictionary_->mutable_data());
+  }
+   void GetDictionaryPtr(std::shared_ptr<ResizableBuffer> & dic_ptr) override {
+    dic_ptr = dictionary_;
   }
 
  protected:

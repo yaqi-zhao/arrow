@@ -22,6 +22,9 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <chrono>
+#include <iostream>
+using namespace std;
 
 #include "arrow/array.h"
 #include "arrow/buffer.h"
@@ -46,6 +49,9 @@
 #include "parquet/metadata.h"
 #include "parquet/properties.h"
 #include "parquet/schema.h"
+#ifdef ENABLE_QPL_ANALYSIS
+#include "qpl/qpl.h"
+#endif
 
 using arrow::Array;
 using arrow::ArrayData;
@@ -113,6 +119,21 @@ class ColumnReaderImpl : public ColumnReader {
     }
     return Status::OK();
   }
+#ifdef ENABLE_QPL_ANALYSIS
+  ::arrow::Status NextBatchAsync(int64_t batch_size,
+                            std::shared_ptr<::arrow::ChunkedArray>* out, std::vector<int64_t>& row_groups_recores) final {
+    RETURN_NOT_OK(LoadBatchAsync(batch_size, row_groups_recores));
+    RETURN_NOT_OK(BuildArray(batch_size, out));
+    for (int x = 0; x < (*out)->num_chunks(); x++) {
+      RETURN_NOT_OK((*out)->chunk(x)->Validate());
+    }
+    return Status::OK();
+  }
+#endif
+
+#ifdef ENABLE_QPL_ANALYSIS
+  virtual ::arrow::Status LoadBatchAsync(int64_t num_records, std::vector<int64_t>& row_groups_records) = 0;
+#endif
 
   virtual ::arrow::Status LoadBatch(int64_t num_records) = 0;
 
@@ -266,10 +287,16 @@ class FileReaderImpl : public FileReader {
     // TODO(wesm): This calculation doesn't make much sense when we have repeated
     // schema nodes
     int64_t records_to_read = 0;
+#ifdef ENABLE_QPL_ANALYSIS
+    std::vector<int64_t> row_group_records;
+#endif    
     for (auto row_group : row_groups) {
       // Can throw exception
-      records_to_read +=
-          reader_->metadata()->RowGroup(row_group)->ColumnChunk(i)->num_values();
+      int64_t recores_number = reader_->metadata()->RowGroup(row_group)->ColumnChunk(i)->num_values();
+      records_to_read += recores_number;
+#ifdef ENABLE_QPL_ANALYSIS
+      row_group_records.push_back(recores_number);
+#endif      
     }
 #ifdef ARROW_WITH_OPENTELEMETRY
     std::string column_name = reader_->metadata()->schema()->Column(i)->name();
@@ -282,7 +309,12 @@ class FileReaderImpl : public FileReader {
                 {"parquet.arrow.physicaltype", phys_type},
                 {"parquet.arrow.records_to_read", records_to_read}});
 #endif
+#ifdef ENABLE_QPL_ANALYSIS
+    // return reader->NextBatchAsync(records_to_read, out, row_group_records);
     return reader->NextBatch(records_to_read, out);
+#else
+    return reader->NextBatch(records_to_read, out);
+#endif    
     END_PARQUET_CATCH_EXCEPTIONS
   }
 
@@ -465,6 +497,53 @@ class LeafReader : public ColumnReaderImpl {
   }
 
   bool IsOrHasRepeatedChild() const final { return false; }
+#ifdef ENABLE_QPL_ANALYSIS
+  Status LoadBatchAsync(int64_t records_to_read, std::vector<int64_t>& row_groups_records) final {
+    BEGIN_PARQUET_CATCH_EXCEPTIONS
+    out_ = nullptr;
+    record_reader_->Reset();
+    // Pre-allocation gives much better performance for flat columns
+    record_reader_->Reserve(records_to_read);
+    record_reader_->InitAsyncVector(row_groups_records.size());
+
+    size_t row_group_idx = 0;
+    while (records_to_read > 0) {
+      if (!record_reader_->HasMoreData()) {
+        break;
+      }
+      int64_t records_read = record_reader_->ReadRecordsAsync(records_to_read, row_group_idx);
+      records_to_read -= records_read;
+      record_reader_->AddDictionaryData(row_group_idx);
+
+        NextRowGroup();
+      ++row_group_idx;
+    }
+
+    auto qpl_jobs = record_reader_->GetQplJobs();
+    // auto threads      = std::vector<std::thread>(qpl_jobs.size());
+    for (size_t i = 0; i < qpl_jobs.size(); ++i) {
+      // auto wait_start = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+      if (qpl_jobs[i] == nullptr) {
+        continue;
+      }
+        qpl_wait_job(qpl_jobs[i]);
+        auto status = qpl_fini_job(qpl_jobs[i]);
+        if (status != QPL_STS_OK) {
+          throw std::runtime_error("An error acquired during job finalization with Async.");
+        }
+        record_reader_->FillOutData(i, row_groups_records[i]);
+        record_reader_->FreeAsyncVector(i);
+    }
+
+
+      // record_reader_->FreeAsyncVector(qpl_jobs.size());
+
+    RETURN_NOT_OK(TransferColumnData(record_reader_.get(), field_, descr_,
+                                     ctx_->pool, &out_));
+    return Status::OK();
+    END_PARQUET_CATCH_EXCEPTIONS
+  }
+#endif
 
   Status LoadBatch(int64_t records_to_read) final {
     BEGIN_PARQUET_CATCH_EXCEPTIONS
@@ -525,6 +604,11 @@ class ExtensionReader : public ColumnReaderImpl {
     return storage_reader_->GetRepLevels(data, length);
   }
 
+#ifdef ENABLE_QPL_ANALYSIS
+  Status LoadBatchAsync(int64_t records_to_read, std::vector<int64_t>& row_groups_records) final {
+    return Status::OK();
+  }
+#endif
   Status LoadBatch(int64_t number_of_records) final {
     return storage_reader_->LoadBatch(number_of_records);
   }
@@ -568,6 +652,12 @@ class ListReader : public ColumnReaderImpl {
   }
 
   bool IsOrHasRepeatedChild() const final { return true; }
+
+#ifdef ENABLE_QPL_ANALYSIS
+  Status LoadBatchAsync(int64_t records_to_read, std::vector<int64_t>& row_groups_records) final {
+    return Status::OK();
+  }
+#endif
 
   Status LoadBatch(int64_t number_of_records) final {
     return item_reader_->LoadBatch(number_of_records);
@@ -706,6 +796,12 @@ class PARQUET_NO_EXPORT StructReader : public ColumnReaderImpl {
     }
     return Status::OK();
   }
+
+#ifdef ENABLE_QPL_ANALYSIS
+  Status LoadBatchAsync(int64_t records_to_read, std::vector<int64_t>& row_groups_records) override {
+    return Status::OK();
+  }
+#endif  
   Status BuildArray(int64_t length_upper_bound,
                     std::shared_ptr<ChunkedArray>* out) override;
   Status GetDefLevels(const int16_t** data, int64_t* length) override;
