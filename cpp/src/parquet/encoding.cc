@@ -1500,13 +1500,13 @@ class DictDecoderImpl : public DecoderImpl, virtual public DictDecoder<Type> {
   int Decode(T* buffer, int num_values) override {
     num_values = std::min(num_values, num_values_);
     int decoded_values =
-#ifndef ENABLE_QPL_ANALYSIS     
+// #ifndef ENABLE_QPL_ANALYSIS     
         idx_decoder_.GetBatchWithDict(reinterpret_cast<const T*>(dictionary_->data()),
                                       dictionary_length_, buffer, num_values);
-#else                                      
-        idx_decoder_.GetBatchWithDictQpl(reinterpret_cast<const T*>(dictionary_->data()),
-                                      dictionary_length_, buffer, num_values);        
-#endif        
+// #else                                      
+//         idx_decoder_.GetBatchWithDictQpl(reinterpret_cast<const T*>(dictionary_->data()),
+//                                       dictionary_length_, buffer, num_values);        
+// #endif        
     if (decoded_values != num_values) {
       ParquetException::EofException();
     }
@@ -1602,11 +1602,11 @@ class DictDecoderImpl : public DecoderImpl, virtual public DictDecoder<Type> {
     auto indices_buffer =
         reinterpret_cast<int32_t*>(indices_scratch_space_->mutable_data());
     int decode_nums = 0;
-#ifdef ENABLE_QPL_ANALYSIS
-    decode_nums = idx_decoder_.GetBatchWithQpl(indices_buffer, num_values);
-#else
+// #ifdef ENABLE_QPL_ANALYSIS
+//     decode_nums = idx_decoder_.GetBatchWithQpl(indices_buffer, num_values);
+// #else
     decode_nums = idx_decoder_.GetBatch(indices_buffer, num_values);
-#endif   
+// #endif   
     if (num_values != decode_nums) {
       ParquetException::EofException();
     }
@@ -1618,11 +1618,11 @@ class DictDecoderImpl : public DecoderImpl, virtual public DictDecoder<Type> {
 
   int DecodeIndices(int num_values, int32_t* indices) override {
     int decode_nums = 0;
-#ifdef ENABLE_QPL_ANALYSIS
-    decode_nums = idx_decoder_.GetBatchWithQpl(indices, num_values);
-#else
+// #ifdef ENABLE_QPL_ANALYSIS
+//     decode_nums = idx_decoder_.GetBatchWithQpl(indices, num_values);
+// #else
     decode_nums = idx_decoder_.GetBatch(indices, num_values);
-#endif      
+// #endif      
     if (num_values != decode_nums) {
       ParquetException::EofException();
     }

@@ -359,6 +359,11 @@ add_parquet_test(arrow-test
                  arrow/arrow_statistics_test.cc
                  test_util.cc)
 
+add_parquet_test(reader-qpl-test
+                 SOURCES
+                 arrow/parquet_reader_test.cc
+                 test_util.cc)
+
 add_parquet_test(arrow-internals-test
                  SOURCES
                  arrow/path_internal_test.cc

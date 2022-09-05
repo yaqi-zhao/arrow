@@ -308,8 +308,8 @@ class FileReaderImpl : public FileReader {
 #endif
     
 #ifdef ENABLE_QPL_ANALYSIS
-    // return reader->NextBatchAsync(records_to_read, out, row_group_records);
-    return reader->NextBatch(records_to_read, out);
+    return reader->NextBatchAsync(records_to_read, out, row_group_records);
+    // return reader->NextBatch(records_to_read, out);
 #else    
     return reader->NextBatch(records_to_read, out);
 #endif       
@@ -802,11 +802,11 @@ class PARQUET_NO_EXPORT StructReader : public ColumnReaderImpl {
 
 #ifdef ENABLE_QPL_ANALYSIS    
   Status LoadBatchAsync(int64_t records_to_read, std::vector<int64_t>& row_groups_records) override {
-    // return LoadBatch(records_to_read);
-    for (const std::unique_ptr<ColumnReaderImpl>& reader : children_) {
-      RETURN_NOT_OK(reader->LoadBatchAsync(records_to_read, row_groups_records));
-    }
-    return Status::OK();    
+    return LoadBatch(records_to_read);
+    // for (const std::unique_ptr<ColumnReaderImpl>& reader : children_) {
+    //   RETURN_NOT_OK(reader->LoadBatchAsync(records_to_read, row_groups_records));
+    // }
+    // return Status::OK();    
   }
 #endif
 
