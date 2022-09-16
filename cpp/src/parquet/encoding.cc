@@ -1490,14 +1490,23 @@ class DictDecoderImpl : public DecoderImpl, virtual public DictDecoder<Type> {
       throw ParquetException("Invalid or corrupted bit_width " +
                              std::to_string(bit_width) + ". Maximum allowed is 32.");
     }
+// #ifdef ENABLE_QPL_ANALYSIS      
+//     idx_decoder_ = ::arrow::util::RleDecoder(data, len, bit_width);
+// #else    
     idx_decoder_ = ::arrow::util::RleDecoder(++data, --len, bit_width);
+// #endif
   }
 
   int Decode(T* buffer, int num_values) override {
     num_values = std::min(num_values, num_values_);
     int decoded_values =
+// #ifndef ENABLE_QPL_ANALYSIS     
         idx_decoder_.GetBatchWithDict(reinterpret_cast<const T*>(dictionary_->data()),
                                       dictionary_length_, buffer, num_values);
+// #else                                      
+//         idx_decoder_.GetBatchWithDictQpl(reinterpret_cast<const T*>(dictionary_->data()),
+//                                       dictionary_length_, buffer, num_values);        
+// #endif        
     if (decoded_values != num_values) {
       ParquetException::EofException();
     }
@@ -1505,13 +1514,34 @@ class DictDecoderImpl : public DecoderImpl, virtual public DictDecoder<Type> {
     return num_values;
   }
 
+#ifdef ENABLE_QPL_ANALYSIS    
+  int DecodeAsync(T* buffer, int num_values, int32_t* qpl_job_id, qpl_job** job, std::vector<uint8_t>** destination, T** out) override {
+    num_values = std::min(num_values, num_values_);
+    uint32_t job_id = 0;
+    *job = QplJobHWPool::instance().acquireJob(job_id);
+    *qpl_job_id = job_id;
+    
+    int decoded_values;
+    decoded_values= idx_decoder_.GetBatchAsync(reinterpret_cast<const T*>(dictionary_->data()),
+                                  dictionary_length_, buffer, num_values, out, job, destination);
+    if (decoded_values != num_values) {
+      ParquetException::EofException();
+    }
+    // num_values_ -= num_values;
+    num_values_ -= num_values;
+    
+    return decoded_values;
+  }
+#endif
+
   int DecodeSpaced(T* buffer, int num_values, int null_count, const uint8_t* valid_bits,
                    int64_t valid_bits_offset) override {
     num_values = std::min(num_values, num_values_);
-    if (num_values != idx_decoder_.GetBatchWithDictSpaced(
+    int decoded_values = idx_decoder_.GetBatchWithDictSpaced(
                           reinterpret_cast<const T*>(dictionary_->data()),
                           dictionary_length_, buffer, num_values, null_count, valid_bits,
-                          valid_bits_offset)) {
+                          valid_bits_offset);
+    if (num_values != decoded_values) {
       ParquetException::EofException();
     }
     num_values_ -= num_values;
@@ -1571,7 +1601,13 @@ class DictDecoderImpl : public DecoderImpl, virtual public DictDecoder<Type> {
     }
     auto indices_buffer =
         reinterpret_cast<int32_t*>(indices_scratch_space_->mutable_data());
-    if (num_values != idx_decoder_.GetBatch(indices_buffer, num_values)) {
+    int decode_nums = 0;
+// #ifdef ENABLE_QPL_ANALYSIS
+//     decode_nums = idx_decoder_.GetBatchWithQpl(indices_buffer, num_values);
+// #else
+    decode_nums = idx_decoder_.GetBatch(indices_buffer, num_values);
+// #endif   
+    if (num_values != decode_nums) {
       ParquetException::EofException();
     }
     auto binary_builder = checked_cast<::arrow::BinaryDictionary32Builder*>(builder);
@@ -1581,7 +1617,13 @@ class DictDecoderImpl : public DecoderImpl, virtual public DictDecoder<Type> {
   }
 
   int DecodeIndices(int num_values, int32_t* indices) override {
-    if (num_values != idx_decoder_.GetBatch(indices, num_values)) {
+    int decode_nums = 0;
+// #ifdef ENABLE_QPL_ANALYSIS
+//     decode_nums = idx_decoder_.GetBatchWithQpl(indices, num_values);
+// #else
+    decode_nums = idx_decoder_.GetBatch(indices, num_values);
+// #endif      
+    if (num_values != decode_nums) {
       ParquetException::EofException();
     }
     num_values_ -= num_values;
@@ -1593,6 +1635,10 @@ class DictDecoderImpl : public DecoderImpl, virtual public DictDecoder<Type> {
     *dictionary = reinterpret_cast<T*>(dictionary_->mutable_data());
   }
 
+  void GetDictionaryPtr(std::shared_ptr<ResizableBuffer> & dic_ptr) override {
+    dic_ptr = dictionary_;
+  }
+  
  protected:
   Status IndexInBounds(int32_t index) {
     if (ARROW_PREDICT_TRUE(0 <= index && index < dictionary_length_)) {
