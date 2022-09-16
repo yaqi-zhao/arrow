@@ -31,6 +31,12 @@
 #include "arrow/util/bit_util.h"
 #include "arrow/util/macros.h"
 
+#ifdef ENABLE_QPL_ANALYSIS
+#include <qpl/qpl.hpp>
+#include <qpl/qpl.h>
+#include "arrow/util/qpl_job_pool.h"
+#endif
+
 namespace arrow {
 namespace util {
 
@@ -613,7 +619,7 @@ inline int RleDecoder::GetBatchWithDictIAA(const T* dictionary, int32_t dictiona
       return GetBatchWithDict(dictionary, dictionary_length, values, batch_size);
     }
     uint32_t job_id = 0;
-    qpl_job* job = QplJobHWPool::instance().acquireJob(job_id);
+    qpl_job* job = arrow::internal::detail::QplJobHWPool::instance().acquireJob(job_id);
     qpl_status status;
     uint32_t size = 0;
     status = qpl_get_job_size(qpl_path_hardware, &size);
@@ -652,6 +658,7 @@ inline int RleDecoder::GetBatchWithDictIAA(const T* dictionary, int32_t dictiona
         throw std::runtime_error("An error acquired during job execute");
     }
 
+    auto* out = values;
     if (destination->size() / batch_size == qpl_ow_32) {
       auto *indices = reinterpret_cast<uint32_t *>(destination->data());
       for (int j = 0; j < batch_size; j++) {
@@ -678,7 +685,7 @@ inline int RleDecoder::GetBatchWithDictIAA(const T* dictionary, int32_t dictiona
       }
     }
 
-    QplJobHWPool::instance().releaseJob(job_id);
+    arrow::internal::detail::QplJobHWPool::instance().releaseJob(job_id);
     return batch_size;
 }
 #endif

@@ -29,7 +29,9 @@
 #include <qpl/qpl.h>
 
 
-namespace parquet {
+namespace arrow {
+namespace internal {
+namespace detail {
 
 /// QplJobHWPool is resource pool to provide the job objects.
 /// Job object is used for storing context information during
@@ -61,6 +63,7 @@ class QplJobHWPool {
     std::mt19937 random_engine;
     std::uniform_int_distribution<int> distribution;
 };
-} // namespace parquet
-
+} // namespace detail
+} // namespace internal
+} // namespace arrow
 #endif

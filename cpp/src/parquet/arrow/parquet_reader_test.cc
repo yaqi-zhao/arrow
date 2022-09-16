@@ -32,7 +32,7 @@
 #include "parquet/arrow/reader.h"
 #include "parquet/arrow/test_util.h"
 #include "parquet/test_util.h"
-#include "parquet/qpl_job_pool.h"
+#include "arrow/util/qpl_job_pool.h"
 
 #ifdef ARROW_CSV
 #include "arrow/csv/api.h"

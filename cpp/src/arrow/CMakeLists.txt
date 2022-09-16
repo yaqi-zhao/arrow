@@ -228,6 +228,7 @@ set(ARROW_SRCS
     util/uri.cc
     util/utf8.cc
     util/value_parsing.cc
+    util/qpl_job_pool.cc
     vendored/base64.cpp
     vendored/datetime/tz.cpp
     vendored/double-conversion/bignum.cc
@@ -678,6 +679,7 @@ if(ARROW_TESTING)
                 STATIC_LINK_LIBS
                 arrow::flatbuffers
                 rapidjson::rapidjson
+                ch_contrib::qpl
                 arrow_static
                 GTest::gtest
                 STATIC_INSTALL_INTERFACE_LIBS

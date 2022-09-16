@@ -19,9 +19,11 @@
 #include "parquet/exception.h"
 
 #ifdef ENABLE_QPL_ANALYSIS
-#include "parquet/qpl_job_pool.h"
+#include "arrow/util/qpl_job_pool.h"
 
-namespace parquet {
+namespace arrow {
+namespace internal {
+namespace detail {        
 
 std::array<qpl_job *, QplJobHWPool::MAX_JOB_NUMBER> QplJobHWPool::hw_job_ptr_pool;
 std::array<std::atomic_bool, QplJobHWPool::MAX_JOB_NUMBER> QplJobHWPool::job_ptr_locks;
@@ -48,9 +50,7 @@ QplJobHWPool::QplJobHWPool()
         qpl_job * qpl_job_ptr = reinterpret_cast<qpl_job *>(hw_jobs_buffer.get() + index * job_size);
         if (qpl_init_job(qpl_path_hardware, qpl_job_ptr) != QPL_STS_OK) {
             job_pool_ready = false;
-            throw ParquetException("Initialization of QPL hardware failed." +
-                "Please check if IAA is properly set up");
-            return;
+            throw std::runtime_error("QPL initialization failed.");
         }
         hw_job_ptr_pool[index] = qpl_job_ptr;
         unLockJob(index);
@@ -83,7 +83,10 @@ qpl_job * QplJobHWPool::acquireJob(uint32_t & job_id) {
             }
         }
         job_id = MAX_JOB_NUMBER - index;
-        assert(index < MAX_JOB_NUMBER);
+        if (index >= MAX_JOB_NUMBER) {
+            throw std::runtime_error("error");
+            // ParquetException::EofException();
+        }
         return hw_job_ptr_pool[index];
     } else {
         return nullptr;
@@ -97,14 +100,19 @@ void QplJobHWPool::releaseJob(uint32_t job_id) {
 
 bool QplJobHWPool::tryLockJob(uint32_t index) {
     bool expected = false;
-    assert(index < MAX_JOB_NUMBER);
+    if (index >= MAX_JOB_NUMBER) {
+        throw std::runtime_error("error");
+    }
     return job_ptr_locks[index].compare_exchange_strong(expected, true);
 }
 
 void QplJobHWPool::unLockJob(uint32_t index) {
-    assert(index < MAX_JOB_NUMBER);
+    if (index >= MAX_JOB_NUMBER) {
+        throw std::runtime_error("error");
+    }
     job_ptr_locks[index].store(false);
 }
-} // end namespace parquet
-
+} // namespace detail
+} // namespace internal
+} // namespace arrow
 #endif
