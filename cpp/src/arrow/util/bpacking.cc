@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <iostream>
 #include "arrow/util/bpacking.h"
 
 #include "arrow/util/bpacking64_default.h"
@@ -153,6 +154,13 @@ struct Unpack32DynamicFunction {
   using FunctionType = decltype(&unpack32_default);
 
   static std::vector<std::pair<DispatchLevel, FunctionType>> implementations() {
+    std::cout << "Unpack32DynamicFunction DispatchLevel::NONE" << std::endl;
+#if defined(ARROW_HAVE_RUNTIME_AVX2)
+  std::cout << "Unpack32DynamicFunction DispatchLevel::AVX2" << std::endl;
+#endif    
+#if defined(ARROW_HAVE_RUNTIME_AVX512)
+  std::cout << "Unpack32DynamicFunction DispatchLevel::AVX512" << std::endl;
+#endif
     return {
       { DispatchLevel::NONE, unpack32_default }
 #if defined(ARROW_HAVE_RUNTIME_AVX2)

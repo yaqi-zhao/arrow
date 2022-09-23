@@ -693,7 +693,7 @@ inline int RleDecoder::GetBatchWithDict(const T* dictionary, int32_t dictionary_
 template <typename T>
 inline int RleDecoder::GetBatchWithDictQpl(const T* dictionary, int32_t dictionary_length,
                                         T* values, int batch_size) {
-    std::cout << "GetBatchWithDictQpl bit_width: " << bit_width_ << std::endl;
+    // std::cout << "GetBatchWithDictQpl bit_width: " << bit_width_ << std::endl;
     DCHECK_GE(bit_width_, 0);
     if (bit_width_ == 1 || bit_width_ == 0) {
       
@@ -843,6 +843,8 @@ inline int RleDecoder::GetBatchAsync(const T* dictionary, int32_t dictionary_len
       async_job->out_bit_width      = qpl_ow_32;  
       *destination = new std::vector<uint8_t>(batch_size * 4, 0);
     }
+
+    // std::cout << "RleDecoder::GetBatchAsync, dictionary_length: " << dictionary_length << " bit_width_: " << bit_width_ << ", out_bit_width: " << async_job->out_bit_width <<  std::endl;
     
     auto qpl_out = *destination;
     // destination.resize(batch_size, 0);   

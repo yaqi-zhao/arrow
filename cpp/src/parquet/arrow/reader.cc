@@ -22,6 +22,7 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <chrono>
 
 #include "arrow/array.h"
 #include "arrow/buffer.h"
@@ -499,6 +500,7 @@ class LeafReader : public ColumnReaderImpl {
   Status LoadBatch(int64_t records_to_read) final {
     BEGIN_PARQUET_CATCH_EXCEPTIONS
     out_ = nullptr;
+    // int64_t time00 = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
     record_reader_->Reset();
     // Pre-allocation gives much better performance for flat columns
     record_reader_->Reserve(records_to_read);
@@ -512,6 +514,9 @@ class LeafReader : public ColumnReaderImpl {
         NextRowGroup();
       }
     }
+    // int64_t time01 = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+
+    // std::cout << "LoadBatchAsync time: " << time01 - time00 << "ms" << std::endl;
     RETURN_NOT_OK(
         TransferColumnData(record_reader_.get(), field_, descr_, ctx_->pool, &out_));
     return Status::OK();
@@ -528,6 +533,8 @@ class LeafReader : public ColumnReaderImpl {
   Status LoadBatchAsync(int64_t records_to_read, std::vector<int64_t>& row_groups_records) final {
     BEGIN_PARQUET_CATCH_EXCEPTIONS
     out_ = nullptr;
+    // int64_t time00 = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+
     record_reader_->Reset();
     // Pre-allocation gives much better performance for flat columns
     record_reader_->Reserve(records_to_read);
@@ -562,9 +569,7 @@ class LeafReader : public ColumnReaderImpl {
         //   // }
         record_reader_->FillOutData(i, row_groups_records[i]);
         record_reader_->FreeAsyncVector(i);
-
     }
-
 
       // record_reader_->FreeAsyncVector(qpl_jobs.size());
 

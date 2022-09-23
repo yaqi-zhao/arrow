@@ -19,6 +19,7 @@
 
 #include <utility>
 #include <vector>
+#include <iostream>
 
 #include "arrow/status.h"
 #include "arrow/util/cpu_info.h"
@@ -83,6 +84,9 @@ class DynamicDispatch {
       if (impl.first >= cur.first && IsSupported(impl.first)) {
         // Higher (or same) level than current
         cur = impl;
+        // std::cout << int(impl.first)  << " supported" << std::endl;
+      } else {
+        // std::cout << int(impl.first) << " not supported" << std::endl;
       }
     }
 
@@ -90,6 +94,7 @@ class DynamicDispatch {
       Status::Invalid("No appropriate implementation found").Abort();
     }
     func = cur.second;
+    std::cout << func << std::endl;
   }
 
  private:

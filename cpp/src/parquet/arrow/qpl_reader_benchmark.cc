@@ -145,7 +145,8 @@ public:
         if (!file_reader)
             prepareReader(filename);
 
-        size_t parallel = 5;
+        size_t parallel = 1;
+        // std::cout << "row_group_total: " << row_group_total << std::endl;
         while (row_group_current < row_group_total) {
             std::vector<int> row_group_indexes;
             for (; row_group_current < row_group_total && row_group_indexes.size() < parallel; ++row_group_current) {
@@ -213,6 +214,38 @@ static void BM_ReadFile(::benchmark::State& state) {
   SetBytesProcessed<rows, row_group>(state);
 }
 
+// template <uint32_t rows, uint32_t row_group>
+// static void BM_ReadFile_Parallel(::benchmark::State& state) {
+//     sleep(10);
+//   while (state.KeepRunning()) {
+    
+//     uint32_t num_threads      = 3;
+//     auto threads  = std::vector<std::thread>(num_threads);
+//     for (auto i = 1u; i <= num_threads; ++i) {
+//         std::string file_name = "single_column_" + std::to_string(i) + "kw_" + std::to_string(state.range(1)) + ".parquet";
+//         threads[i] = std::thread([&file_name](uint32_t i) {
+//             ParquetRowGroupReader reader;
+//             reader.read(file_name);
+//         }, i);
+
+//         cpu_set_t cpuset;
+//         CPU_ZERO(&cpuset);
+//         CPU_SET(i, &cpuset);
+//         int rc = pthread_setaffinity_np(threads[i].native_handle(), sizeof(cpu_set_t), &cpuset);
+
+//         if (rc!=0) {
+//             throw std::runtime_error("An error accuquired during calling pthread_setaffinity_np. ");
+//         }
+//     }
+
+//     for (auto &thread : threads) {
+//         thread.join();
+//     }    
+//   }
+
+//   SetBytesProcessed<rows, row_group>(state);
+// }
+
 
 // There are two parameters here that cover different data distributions.
 // null_percentage governs distribution and therefore runs of null values.
@@ -228,7 +261,25 @@ BENCHMARK_TEMPLATE2(BM_ReadFile, 1, 64)
     ->Args({2, 512})
     ->Args({3, 512});
 
+// BENCHMARK_TEMPLATE2(BM_ReadFile_Parallel, 1, 64)
+//     ->Args({1, 64});
 
+BENCHMARK_TEMPLATE2(BM_ReadFile, 1, 64)
+    ->Args({1, 64});
+BENCHMARK_TEMPLATE2(BM_ReadFile, 1, 64)
+    ->Args({1, 64});
+BENCHMARK_TEMPLATE2(BM_ReadFile, 1, 64)
+    ->Args({1, 64});
+BENCHMARK_TEMPLATE2(BM_ReadFile, 1, 64)
+    ->Args({1, 64});
+BENCHMARK_TEMPLATE2(BM_ReadFile, 1, 64)
+    ->Args({1, 64});
+BENCHMARK_TEMPLATE2(BM_ReadFile, 1, 64)
+    ->Args({1, 64});
+BENCHMARK_TEMPLATE2(BM_ReadFile, 1, 64)
+    ->Args({1, 64});                        
+BENCHMARK_TEMPLATE2(BM_ReadFile, 1, 64)
+    ->Args({1, 64});
 // }  // namespace benchmark
 
 }  // namespace parquet

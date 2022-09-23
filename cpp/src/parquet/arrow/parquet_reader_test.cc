@@ -29,6 +29,9 @@
 #include <sstream>
 #include <vector>
 #include <chrono>
+#include <thread>
+#include <time.h>
+#include <x86intrin.h>
 
 #include "arrow/io/api.h"
 #include "arrow/table.h"
@@ -54,8 +57,6 @@ using namespace std::chrono;
 
 // namespace parquet {
 namespace arrow {
-
-
 
 static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
 {
@@ -102,7 +103,7 @@ public:
         if (!file_reader)
             prepareReader(filename);
 
-        size_t parallel = 4;
+        size_t parallel = 2;
         while (row_group_current < row_group_total) {
             std::vector<int> row_group_indexes;
             for (; row_group_current < row_group_total && row_group_indexes.size() < parallel; ++row_group_current) {
@@ -155,120 +156,311 @@ TEST_F(ParquetRowGroupReader, ReadParquetFile) {
 }
 
 
-TEST_F(ParquetRowGroupReader, SingleColumn_64_1kw) {
+
+// TEST_F(ParquetRowGroupReader, SingleColumn_16_1kw) {
+//   // sleep(10);
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("single_column_1kw_16.parquet");
+// }
+
+// TEST_F(ParquetRowGroupReader, SingleColumn_16_2kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("single_column_2kw_16.parquet");
+// }
+
+// TEST_F(ParquetRowGroupReader, SingleColumn_16_3kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("single_column_3kw_16.parquet");
+// }
+
+// TEST_F(ParquetRowGroupReader, SingleColumn_64_1kw) {
+//   // sleep(10);
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("single_column_1kw_64.parquet");
+// }
+
+// TEST_F(ParquetRowGroupReader, SingleColumn_64_2kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("single_column_2kw_64.parquet");
+// }
+
+// TEST_F(ParquetRowGroupReader, SingleColumn_64_3kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("single_column_3kw_64.parquet");
+// }
+
+// TEST_F(ParquetRowGroupReader, SingleColumn_512_1kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("single_column_1kw_512.parquet");
+// }
+
+// TEST_F(ParquetRowGroupReader, SingleColumn_512_2kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("single_column_2kw_512.parquet");
+// }
+
+// TEST_F(ParquetRowGroupReader, SingleColumn_512_3kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   for (size_t i = 0; i < 10; i++) {
+//     std::shared_ptr<::arrow::Table> actual_table;
+//     read("single_column_3kw_512.parquet");
+//   }
+// }
+
+// TEST_F(ParquetRowGroupReader, SingleColumn_1024_3kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   for (size_t i = 0; i < 10; i++) {
+//     std::shared_ptr<::arrow::Table> actual_table;
+//     read("single_column_3kw_1024.parquet");
+//   }
+// }
+
+
+// TEST_F(ParquetRowGroupReader, SingleColumn_64_3kw_2bit) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   for (size_t i = 0; i < 10; i++) {
+//     std::shared_ptr<::arrow::Table> actual_table;
+//     read("sinle_cn_1kw_64_2bit.parquet");
+//   }
+// }
+
+// TEST_F(ParquetRowGroupReader, SingleColumn_64_3kw_3bit) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   for (size_t i = 0; i < 10; i++) {
+//     std::shared_ptr<::arrow::Table> actual_table;
+//     read("sinle_cn_1kw_64_3bit.parquet");
+//   }
+// }
+
+// TEST_F(ParquetRowGroupReader, SingleColumn_64_1kw_5bit) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   for (size_t i = 0; i < 10; i++) {
+//     std::shared_ptr<::arrow::Table> actual_table;
+//     read("single_column_1kw_5bit.parquet");
+//   }
+// }
+
+// TEST_F(ParquetRowGroupReader, SingleColumn_64_1kw_6bit) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   for (size_t i = 0; i < 10; i++) {
+//     std::shared_ptr<::arrow::Table> actual_table;
+//     read("single_column_1kw_6bit.parquet");
+//   }
+// }
+
+
+TEST_F(ParquetRowGroupReader, SingleColumn_64_1kw_8bit) {
   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("single_column_1kw_64.parquet");
+  for (size_t i = 0; i < 10; i++) {
+    std::shared_ptr<::arrow::Table> actual_table;
+    read("sc_1kw_multibit_8.parquet");
+  }
 }
 
-TEST_F(ParquetRowGroupReader, SingleColumn_64_2kw) {
+TEST_F(ParquetRowGroupReader, SingleColumn_64_1kw_9bit) {
   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("single_column_2kw_64.parquet");
+  for (size_t i = 0; i < 10; i++) {
+    std::shared_ptr<::arrow::Table> actual_table;
+    read("sc_1kw_multibit_9.parquet");
+  }
+}
+TEST_F(ParquetRowGroupReader, SingleColumn_64_1kw_10bit) {
+  std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+  for (size_t i = 0; i < 10; i++) {
+    std::shared_ptr<::arrow::Table> actual_table;
+    read("sc_1kw_multibit_10.parquet");
+  }
 }
 
-TEST_F(ParquetRowGroupReader, SingleColumn_64_3kw) {
+TEST_F(ParquetRowGroupReader, SingleColumn_64_1kw_11bit) {
   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("single_column_1kw_64.parquet");
+  for (size_t i = 0; i < 10; i++) {
+    std::shared_ptr<::arrow::Table> actual_table;
+    read("sc_1kw_multibit_11.parquet");
+  }
 }
 
-TEST_F(ParquetRowGroupReader, SingleColumn_512_1kw) {
+TEST_F(ParquetRowGroupReader, SingleColumn_64_1kw_12bit) {
   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("single_column_1kw_512.parquet");
+  for (size_t i = 0; i < 10; i++) {
+    std::shared_ptr<::arrow::Table> actual_table;
+    read("sc_1kw_multibit_12.parquet");
+  }
 }
 
-TEST_F(ParquetRowGroupReader, SingleColumn_512_2kw) {
+TEST_F(ParquetRowGroupReader, SingleColumn_64_1kw_13bit) {
   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("single_column_2kw_512.parquet");
+  for (size_t i = 0; i < 10; i++) {
+    std::shared_ptr<::arrow::Table> actual_table;
+    read("sc_1kw_multibit_13.parquet");
+  }
 }
 
-TEST_F(ParquetRowGroupReader, SingleColumn_512_3kw) {
+TEST_F(ParquetRowGroupReader, SingleColumn_64_1kw_14bit) {
   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("single_column_1kw_512.parquet");
+  for (size_t i = 0; i < 10; i++) {
+    std::shared_ptr<::arrow::Table> actual_table;
+    read("sc_1kw_multibit_14.parquet");
+  }
 }
 
-TEST_F(ParquetRowGroupReader, ReadParquetFile_16_1kw) {
+TEST_F(ParquetRowGroupReader, SingleColumn_1024_1kw_15bit) {
   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("lineorder_10000000_16.parquet");
+  for (size_t i = 0; i < 10; i++) {
+    std::shared_ptr<::arrow::Table> actual_table;
+    read("sc_1kw_multibit_15.parquet");
+  }
 }
 
-TEST_F(ParquetRowGroupReader, ReadParquetFile_16_2kw) {
+TEST_F(ParquetRowGroupReader, SingleColumn_1024_1kw_16bit) {
   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("lineorder_20000000_16.parquet");
+  for (size_t i = 0; i < 10; i++) {
+    std::shared_ptr<::arrow::Table> actual_table;
+    read("sc_1kw_multibit_16.parquet");
+  }
 }
 
-TEST_F(ParquetRowGroupReader, ReadParquetFile_64_1kw) {
+TEST_F(ParquetRowGroupReader, SingleColumn_1024_2kw_17_18bit) {
   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("lineorder_10000000_64.parquet");
+  for (size_t i = 0; i < 10; i++) {
+    std::shared_ptr<::arrow::Table> actual_table;
+    read("sc_1kw_multibit_17_18.parquet");
+  }
 }
 
-
-TEST_F(ParquetRowGroupReader, ReadParquetFile_64_2kw) {
+TEST_F(ParquetRowGroupReader, SingleColumn_64_1kw_multi_bit) {
   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("lineorder_20000000_64.parquet");
+  for (size_t i = 0; i < 10; i++) {
+    std::shared_ptr<::arrow::Table> actual_table;
+    read("sc_1kw_multibit_1.parquet");
+  }
 }
 
-TEST_F(ParquetRowGroupReader, ReadParquetFile_64_3kw) {
-  std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("lineorder_10000000_64.parquet");
+static inline uint64_t current_time() {
+    return __rdtsc();
 }
 
-TEST_F(ParquetRowGroupReader, ReadParquetFile_128_2kw) {
-  std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("lineorder_20000000_128.parquet");
-}
+// TEST_F(ParquetRowGroupReader, SingleColumn_10_parallel) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   sleep(15);
+//   uint32_t num_threads      = 2;
+//   auto threads  = std::vector<std::thread>(num_threads);
+//   for (auto i = 0u; i < num_threads; ++i) {
+//      threads[i] = std::thread([this](uint32_t i) {
+//       read("single_column_1kw_16.parquet");
+//       read("single_column_2kw_16.parquet");
+//       read("single_column_3kw_16.parquet");
+//       read("single_column_1kw_64.parquet");
+//       read("single_column_2kw_64.parquet");
+//       read("single_column_3kw_64.parquet");
+//       read("single_column_1kw_512.parquet");
+//       read("single_column_2kw_512.parquet");
+//       read("single_column_3kw_512.parquet");
+//       read("single_column_1kw_1024.parquet");
+//      }, i);
 
-TEST_F(ParquetRowGroupReader, ReadParquetFile_128_1kw) {
-  std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("lineorder_10000000_128.parquet");
-}
+//     cpu_set_t cpuset;
+//     CPU_ZERO(&cpuset);
+//     CPU_SET(i, &cpuset);
+//     int rc = pthread_setaffinity_np(threads[i].native_handle(), sizeof(cpu_set_t), &cpuset);
 
-TEST_F(ParquetRowGroupReader, ReadParquetFile_128_3kw) {
-  std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("lineorder_20000000_128.parquet");
-}
+//     if (rc!=0) {
+//         throw std::runtime_error("An error accuquired during calling pthread_setaffinity_np. ");
+//     }
+//   }
 
-TEST_F(ParquetRowGroupReader, ReadParquetFile_512_1kw) {
-  std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("lineorder_10000000_512.parquet");
-}
+//   for (auto &thread : threads) {
+//       thread.join();
+//   }
+// }
 
-TEST_F(ParquetRowGroupReader, ReadParquetFile_512_2kw) {
-  std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("lineorder_20000000_512.parquet");
-}
 
-TEST_F(ParquetRowGroupReader, ReadParquetFile_512_3kw) {
-  std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("lineorder_20000000_512.parquet");
-}
+// TEST_F(ParquetRowGroupReader, ReadParquetFile_16_1kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("lineorder_10000000_16.parquet");
+// }
 
-TEST_F(ParquetRowGroupReader, ReadParquetFile_int32_decima) {
-  std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("int32_decimal.parquet");
-}
+// TEST_F(ParquetRowGroupReader, ReadParquetFile_16_2kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("lineorder_20000000_16.parquet");
+// }
 
-TEST_F(ParquetRowGroupReader, ReadParquetFile_alltypes_dictionary) {
-  std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table;
-  read("alltypes_dictionary.parquet");
-}
+// TEST_F(ParquetRowGroupReader, ReadParquetFile_64_1kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("lineorder_10000000_64.parquet");
+// }
+
+
+// TEST_F(ParquetRowGroupReader, ReadParquetFile_64_2kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("lineorder_20000000_64.parquet");
+// }
+
+// TEST_F(ParquetRowGroupReader, ReadParquetFile_64_3kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("lineorder_10000000_64.parquet");
+// }
+
+// TEST_F(ParquetRowGroupReader, ReadParquetFile_128_2kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("lineorder_20000000_128.parquet");
+// }
+
+// TEST_F(ParquetRowGroupReader, ReadParquetFile_128_1kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("lineorder_10000000_128.parquet");
+// }
+
+// TEST_F(ParquetRowGroupReader, ReadParquetFile_128_3kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("lineorder_20000000_128.parquet");
+// }
+
+// TEST_F(ParquetRowGroupReader, ReadParquetFile_512_1kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("lineorder_10000000_512.parquet");
+// }
+
+// TEST_F(ParquetRowGroupReader, ReadParquetFile_512_2kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("lineorder_20000000_512.parquet");
+// }
+
+// TEST_F(ParquetRowGroupReader, ReadParquetFile_512_3kw) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("lineorder_20000000_512.parquet");
+// }
+
+// TEST_F(ParquetRowGroupReader, ReadParquetFile_int32_decima) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("int32_decimal.parquet");
+// }
+
+// TEST_F(ParquetRowGroupReader, ReadParquetFile_alltypes_dictionary) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table;
+//   read("alltypes_dictionary.parquet");
+// }
 
 
 
@@ -309,23 +501,23 @@ class TestArrowReadWithQPL : public ::testing::Test {
   };
 
 
-TEST_F(TestArrowReadWithQPL, ReadSnappyParquetFile) {
-  std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
-  std::shared_ptr<::arrow::Table> actual_table, expect_table;
-  ReadTableFromParquetFile("lineorder.parquet", &actual_table);
+// TEST_F(TestArrowReadWithQPL, ReadSnappyParquetFile) {
+//   std::cout << "TestArrowReadWithQPL, ReadSnappyParquetFile" << std::endl;
+//   std::shared_ptr<::arrow::Table> actual_table, expect_table;
+//   ReadTableFromParquetFile("lineorder.parquet", &actual_table);
 
-  auto convert_options = ::arrow::csv::ConvertOptions::Defaults();
-  convert_options.column_types = {{"c_customer_sk", ::arrow::uint8()},
-                                  {"c_current_cdemo_sk", ::arrow::uint8()},
-                                  {"c_current_hdemo_sk", ::arrow::uint8()},
-                                  {"c_current_addr_sk", ::arrow::uint8()},
-                                  {"c_customer_id", ::arrow::binary()}};
-  convert_options.strings_can_be_null = true;
-  ReadTableFromCSVFile("lineorder.csv", convert_options,
-                       &expect_table);
+//   auto convert_options = ::arrow::csv::ConvertOptions::Defaults();
+//   convert_options.column_types = {{"c_customer_sk", ::arrow::uint8()},
+//                                   {"c_current_cdemo_sk", ::arrow::uint8()},
+//                                   {"c_current_hdemo_sk", ::arrow::uint8()},
+//                                   {"c_current_addr_sk", ::arrow::uint8()},
+//                                   {"c_customer_id", ::arrow::binary()}};
+//   convert_options.strings_can_be_null = true;
+//   ReadTableFromCSVFile("lineorder.csv", convert_options,
+//                        &expect_table);
 
-  ::arrow::AssertTablesEqual(*actual_table, *expect_table);
-}
+//   ::arrow::AssertTablesEqual(*actual_table, *expect_table);
+// }
 
 #else
 TEST_F(TestArrowReadWithQPL, ReadSnappyParquetFile) {

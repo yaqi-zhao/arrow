@@ -4446,23 +4446,23 @@ TEST_F(TestArrowReadDeltaEncoding, DeltaBinaryPacked) {
   ::arrow::AssertTablesEqual(*actual_table, *expect_table);
 }
 
-// TEST_F(TestArrowReadDeltaEncoding, ReadSnappyParquetFile) {
-//   std::cout << "TestArrowReadDeltaEncoding, ReadSnappyParquetFile" << std::endl;
-//   std::shared_ptr<::arrow::Table> actual_table, expect_table;
-//   ReadTableFromParquetFile("lineorder.parquet", &actual_table);
+TEST_F(TestArrowReadDeltaEncoding, ReadSnappyParquetFile) {
+  std::cout << "TestArrowReadDeltaEncoding, ReadSnappyParquetFile" << std::endl;
+  std::shared_ptr<::arrow::Table> actual_table, expect_table;
+  ReadTableFromParquetFile("lineorder.parquet", &actual_table);
 
-//   auto convert_options = ::arrow::csv::ConvertOptions::Defaults();
-//   convert_options.column_types = {{"c_customer_sk", ::arrow::uint8()},
-//                                   {"c_current_cdemo_sk", ::arrow::uint8()},
-//                                   {"c_current_hdemo_sk", ::arrow::uint8()},
-//                                   {"c_current_addr_sk", ::arrow::uint8()},
-//                                   {"c_customer_id", ::arrow::binary()}};
-//   convert_options.strings_can_be_null = true;
-//   ReadTableFromCSVFile("lineorder.csv", convert_options,
-//                        &expect_table);
+  auto convert_options = ::arrow::csv::ConvertOptions::Defaults();
+  convert_options.column_types = {{"c_customer_sk", ::arrow::uint8()},
+                                  {"c_current_cdemo_sk", ::arrow::uint8()},
+                                  {"c_current_hdemo_sk", ::arrow::uint8()},
+                                  {"c_current_addr_sk", ::arrow::uint8()},
+                                  {"c_customer_id", ::arrow::binary()}};
+  convert_options.strings_can_be_null = true;
+  ReadTableFromCSVFile("lineorder.csv", convert_options,
+                       &expect_table);
 
-//   ::arrow::AssertTablesEqual(*actual_table, *expect_table);
-// }
+  ::arrow::AssertTablesEqual(*actual_table, *expect_table);
+}
 
 // TEST_F(TestArrowReadDeltaEncoding, ReadSnappyParquetFile_64_1k) {
 //   std::cout << "TestArrowReadDeltaEncoding, ReadSnappyParquetFile" << std::endl;

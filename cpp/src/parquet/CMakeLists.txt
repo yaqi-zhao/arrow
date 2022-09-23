@@ -336,21 +336,21 @@ add_parquet_test(internals-test
 set_source_files_properties(public_api_test.cc PROPERTIES SKIP_PRECOMPILE_HEADERS ON
                                                           SKIP_UNITY_BUILD_INCLUSION ON)
 
-add_parquet_test(reader-test
-                 SOURCES
-                 column_reader_test.cc
-                 level_conversion_test.cc
-                 column_scanner_test.cc
-                 reader_test.cc
-                 stream_reader_test.cc
-                 test_util.cc)
+# add_parquet_test(reader-test
+#                  SOURCES
+#                  column_reader_test.cc
+#                  level_conversion_test.cc
+#                  column_scanner_test.cc
+#                  reader_test.cc
+#                  stream_reader_test.cc
+#                  test_util.cc)
 
-add_parquet_test(writer-test
-                 SOURCES
-                 column_writer_test.cc
-                 file_serialize_test.cc
-                 stream_writer_test.cc
-                 test_util.cc)
+# add_parquet_test(writer-test
+#                  SOURCES
+#                  column_writer_test.cc
+#                  file_serialize_test.cc
+#                  stream_writer_test.cc
+#                  test_util.cc)
 
 add_parquet_test(arrow-test
                  SOURCES
@@ -364,11 +364,11 @@ add_parquet_test(reader-qpl-test
                  arrow/parquet_reader_test.cc
                  test_util.cc)
 
-add_parquet_test(arrow-internals-test
-                 SOURCES
-                 arrow/path_internal_test.cc
-                 arrow/reconstruct_internal_test.cc
-                 test_util.cc)
+# add_parquet_test(arrow-internals-test
+#                  SOURCES
+#                  arrow/path_internal_test.cc
+#                  arrow/reconstruct_internal_test.cc
+#                  test_util.cc)
 
 if(PARQUET_REQUIRE_ENCRYPTION)
   add_parquet_test(encryption-test
@@ -392,12 +392,13 @@ endif()
 # Those tests need to use static linking as they access thrift-generated
 # symbols which are not exported by parquet.dll on Windows (PARQUET-1420).
 add_parquet_test(file_deserialize_test SOURCES file_deserialize_test.cc test_util.cc)
-add_parquet_test(schema_test)
+# add_parquet_test(schema_test)
 
-add_parquet_benchmark(column_io_benchmark)
-add_parquet_benchmark(encoding_benchmark)
-add_parquet_benchmark(level_conversion_benchmark)
-add_parquet_benchmark(arrow/reader_writer_benchmark PREFIX "parquet-arrow")
+# add_parquet_benchmark(column_io_benchmark)
+# add_parquet_benchmark(encoding_benchmark)
+# add_parquet_benchmark(level_conversion_benchmark)
+# add_parquet_benchmark(arrow/reader_writer_benchmark PREFIX "parquet-arrow")
+add_parquet_benchmark(arrow/qpl_reader_benchmark)
 
 if(ARROW_WITH_BROTLI)
   add_definitions(-DARROW_WITH_BROTLI)

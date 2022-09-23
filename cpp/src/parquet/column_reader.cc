@@ -1590,7 +1590,7 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
   // }
 
   virtual void FillOutData(size_t row_group_idx, int64_t records_read) override {
-    // auto out = out_ptrs[row_group_idx];
+    // std::cout << "destinations[row_group_idx].size(): " << destinations[row_group_idx].size() << std::endl;
     for (size_t i = 0; i < destinations[row_group_idx].size(); ++i) {
       auto destination = destinations[row_group_idx][i];
       if (destination == nullptr) {
@@ -1606,7 +1606,7 @@ class TypedRecordReader : public ColumnReaderImplBase<DType>,
 
       auto status = qpl_wait_job(job);
       if (status != QPL_STS_OK) {
-        std::cout << "An error acquired during job wait." << status << std::endl;
+        std::cout << "An error acquired during job wait " << status << std::endl;
         throw std::runtime_error("An error acquired during job wait with Async.");
       }      
       status = qpl_fini_job(job);

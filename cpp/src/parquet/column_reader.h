@@ -76,7 +76,7 @@ private:
     static void unLockJob(uint32_t index);
 
     /// Maximum jobs running in parallel supported by IAA hardware
-    static constexpr auto MAX_HW_JOB_NUMBER = 512;
+    static constexpr auto MAX_HW_JOB_NUMBER = 64;
     /// Entire buffer for storing all job objects
     static std::unique_ptr<uint8_t[]> hw_jobs_buffer;
     /// Job pool for storing all job object pointers

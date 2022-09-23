@@ -18,11 +18,13 @@
 #include "arrow/util/bpacking_avx512.h"
 #include "arrow/util/bpacking_simd512_generated.h"
 #include "arrow/util/bpacking_simd_internal.h"
+#include <iostream>
 
 namespace arrow {
 namespace internal {
 
 int unpack32_avx512(const uint32_t* in, uint32_t* out, int batch_size, int num_bits) {
+  // std::cout << "unpack32_avx512" << std::endl;
   return unpack32_specialized<UnpackBits512<DispatchLevel::AVX512>>(in, out, batch_size,
                                                                     num_bits);
 }
