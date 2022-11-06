@@ -679,7 +679,6 @@ if(ARROW_TESTING)
                 STATIC_LINK_LIBS
                 arrow::flatbuffers
                 rapidjson::rapidjson
-                ch_contrib::qpl
                 arrow_static
                 GTest::gtest
                 STATIC_INSTALL_INTERFACE_LIBS

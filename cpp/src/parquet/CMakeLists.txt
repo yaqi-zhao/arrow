@@ -127,9 +127,6 @@ set(PARQUET_SHARED_TEST_LINK_LIBS arrow_testing_shared ${PARQUET_MIN_TEST_LIBS}
 
 set(PARQUET_STATIC_TEST_LINK_LIBS ${PARQUET_MIN_TEST_LIBS} parquet_static thrift::thrift
                                   ${ARROW_LIBRARIES_FOR_STATIC_TESTS})
-if(ENABLE_QPL)
-  list(APPEND PARQUET_SHARED_TEST_LINK_LIBS ch_contrib::qpl)
-endif()
 #
 # Generated Thrift sources
 set_source_files_properties(src/generated/parquet_types.cpp src/generated/parquet_types.h

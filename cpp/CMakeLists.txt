@@ -347,9 +347,12 @@ if(UNIX)
   add_custom_target(iwyu-all ${BUILD_SUPPORT_DIR}/iwyu/iwyu.sh all)
 endif(UNIX)
 
-if(ENABLE_QPL)
-  add_subdirectory(build-support/qpl-cmake)
+if(ARROW_WITH_QPL)
   add_definitions(-DENABLE_QPL_ANALYSIS)
+  list(APPEND ARROW_STATIC_LINK_LIBS qpl::qpl)
+  if(QPL_SOURCE STREQUAL "SYSTEM")
+    list(APPEND ARROW_STATIC_INSTALL_INTERFACE_LIBS qpl::qpl)
+  endif()  
   message("ENABLE_QPL_ANALYSIS" ${ENABLE_QPL_ANALYSIS})
 endif()
 
@@ -534,12 +537,6 @@ message(STATUS "CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/src)
 include_directories(src)
 
-if(ENABLE_QPL)
-  set (QPL_PROJECT_DIR "${PROJECT_SOURCE_DIR}/submodules/qpl")
-  include_directories(${QPL_PROJECT_DIR})
-  include_directories(${QPL_PROJECT_DIR}/include)
-endif()
-
 # Compiled flatbuffers files
 include_directories(src/generated)
 
@@ -657,8 +654,8 @@ set(ARROW_SHARED_INSTALL_INTERFACE_LIBS)
 set(ARROW_STATIC_LINK_LIBS arrow::flatbuffers arrow::hadoop)
 set(ARROW_STATIC_INSTALL_INTERFACE_LIBS)
 
-if(ENABLE_QPL)
-  list(APPEND ARROW_SHARED_LINK_LIBS ch_contrib::qpl)
+if(ARROW_WITH_QPL)
+  list(APPEND ARROW_SHARED_LINK_LIBS qpl::qpl)
 endif()
 
 if(ARROW_USE_BOOST)

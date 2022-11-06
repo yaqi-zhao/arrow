@@ -72,7 +72,8 @@ set(ARROW_THIRDPARTY_DEPENDENCIES
     utf8proc
     xsimd
     ZLIB
-    zstd)
+    zstd
+    QPL)
 
 # For backward compatibility. We use "BOOST_SOURCE" if "Boost_SOURCE"
 # isn't specified and "BOOST_SOURCE" is specified.
@@ -203,6 +204,8 @@ macro(build_dependency DEPENDENCY_NAME)
     build_zlib()
   elseif("${DEPENDENCY_NAME}" STREQUAL "zstd")
     build_zstd()
+  elseif("${DEPENDENCY_NAME}" STREQUAL "QPL")
+    build_qpl()
   else()
     message(FATAL_ERROR "Unknown thirdparty dependency to build: ${DEPENDENCY_NAME}")
   endif()
@@ -647,6 +650,14 @@ else()
   set_urls(RAPIDJSON_SOURCE_URL
            "https://github.com/miloyip/rapidjson/archive/${ARROW_RAPIDJSON_BUILD_VERSION}.tar.gz"
            "${THIRDPARTY_MIRROR_URL}/rapidjson-${ARROW_RAPIDJSON_BUILD_VERSION}.tar.gz")
+endif()
+
+if(DEFINED ENV{ARROW_QPL_URL})
+  set(QPL_SOURCE_URL "$ENV{ARROW_QPL_URL}")
+else()
+  set_urls(QPL_SOURCE_URL
+           "https://github.com/intel/qpl/archive/refs/tags/${ARROW_QPL_BUILD_VERSION}.tar.gz"
+           "${THIRDPARTY_MIRROR_URL}/qpl-${ARROW_QPL_BUILD_VERSION}.tar.gz")
 endif()
 
 if(DEFINED ENV{ARROW_SNAPPY_URL})
@@ -2201,6 +2212,48 @@ if(ARROW_WITH_RAPIDJSON)
   else()
     target_include_directories(rapidjson::rapidjson INTERFACE "${RAPIDJSON_INCLUDE_DIR}")
   endif()
+endif()
+
+
+macro(build_qpl)
+  message(STATUS "Building QPL from source")
+  set(QPL_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/qpl_ep/src/qpl_ep-install")
+  if(MSVC)
+      set(QPL_STATIC_LIB_NAME qplstatic.lib)
+  else()
+    set(QPL_STATIC_LIB_NAME libqpl.a)
+  endif()
+  set(QPL_STATIC_LIB "${QPL_PREFIX}/lib64/${QPL_STATIC_LIB_NAME}")
+  set(QPL_CMAKE_ARGS
+      ${EP_COMMON_CMAKE_ARGS}
+      -DCMAKE_BUILD_TYPE=Release
+      "-DCMAKE_INSTALL_PREFIX=${QPL_PREFIX}")                      
+
+  externalproject_add(qpl_ep
+                      ${EP_LOG_OPTIONS}
+                      URL ${QPL_SOURCE_URL}
+                      URL_HASH "SHA256=${ARROW_QPL_BUILD_SHA256_CHECKSUM}"
+                      BUILD_BYPRODUCTS "${QPL_STATIC_LIB}"
+                      CMAKE_ARGS ${QPL_CMAKE_ARGS})
+
+  file(MAKE_DIRECTORY "${QPL_PREFIX}/include")
+
+  add_library(qpl::qpl STATIC IMPORTED)
+  set(QPL_LIBRARIES ${QPL_STATIC_LIB})
+  set(QPL_INCLUDE_DIRS "${QPL_PREFIX}/include")
+  set_target_properties(qpl::qpl
+                        PROPERTIES IMPORTED_LOCATION ${QPL_LIBRARIES}
+                                   INTERFACE_INCLUDE_DIRECTORIES ${QPL_INCLUDE_DIRS})
+
+  add_dependencies(toolchain qpl_ep)
+  add_dependencies(qpl::qpl qpl_ep)
+
+  list(APPEND ARROW_BUNDLED_STATIC_LIBS qpl::qpl)
+  set(QPL_VENDORED TRUE)
+endmacro()
+
+if(ARROW_WITH_QPL)
+  resolve_dependency(QPL PC_PACKAGE_NAMES qpl)
 endif()
 
 macro(build_xsimd)
