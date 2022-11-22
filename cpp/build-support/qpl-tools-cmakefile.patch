@@ -1,0 +1,13 @@
+diff --git a/tools/CMakeLists.txt b/tools/CMakeLists.txt
+index 67efdf4..9df5e0a 100644
+--- a/tools/CMakeLists.txt
++++ b/tools/CMakeLists.txt
+@@ -14,8 +14,6 @@ if (LIB_FUZZING_ENGINE)
+ else ()
+     add_subdirectory(ref)
+     add_subdirectory(utils)
+-    add_subdirectory(third-party/google-test EXCLUDE_FROM_ALL)
+-    add_subdirectory(tests)
+ endif ()
+ 
+ install(DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/configs
