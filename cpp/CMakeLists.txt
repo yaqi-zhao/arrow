@@ -347,6 +347,15 @@ if(UNIX)
   add_custom_target(iwyu-all ${BUILD_SUPPORT_DIR}/iwyu/iwyu.sh all)
 endif(UNIX)
 
+if(ARROW_WITH_QPL)
+  add_definitions(-DENABLE_QPL_ANALYSIS)
+  list(APPEND ARROW_STATIC_LINK_LIBS qpl::qpl)
+  if(QPL_SOURCE STREQUAL "SYSTEM")
+    list(APPEND ARROW_STATIC_INSTALL_INTERFACE_LIBS qpl::qpl)
+  endif()  
+  message("ENABLE_QPL_ANALYSIS" ${ENABLE_QPL_ANALYSIS})
+endif()
+
 # datetime code used by iOS requires zlib support
 if(IOS)
   set(ARROW_WITH_ZLIB ON)
@@ -644,6 +653,10 @@ set(ARROW_SHARED_LINK_LIBS arrow::flatbuffers arrow::hadoop)
 set(ARROW_SHARED_INSTALL_INTERFACE_LIBS)
 set(ARROW_STATIC_LINK_LIBS arrow::flatbuffers arrow::hadoop)
 set(ARROW_STATIC_INSTALL_INTERFACE_LIBS)
+
+if(ARROW_WITH_QPL)
+  list(APPEND ARROW_SHARED_LINK_LIBS qpl::qpl)
+endif()
 
 if(ARROW_USE_BOOST)
   list(APPEND ARROW_SHARED_LINK_LIBS Boost::headers)
