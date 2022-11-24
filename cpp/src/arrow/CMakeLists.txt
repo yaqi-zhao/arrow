@@ -228,6 +228,7 @@ set(ARROW_SRCS
     util/uri.cc
     util/utf8.cc
     util/value_parsing.cc
+    util/qpl_job_pool.cc
     vendored/base64.cpp
     vendored/datetime/tz.cpp
     vendored/double-conversion/bignum.cc
