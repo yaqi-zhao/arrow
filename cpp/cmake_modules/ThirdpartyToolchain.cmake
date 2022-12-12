@@ -2221,16 +2221,14 @@ macro(build_qpl)
   set(QPL_STATIC_LIB "${QPL_PREFIX}/lib/${QPL_STATIC_LIB_NAME}")
   set(QPL_CMAKE_ARGS ${EP_COMMON_CMAKE_ARGS} -DCMAKE_INSTALL_LIBDIR=lib
                      "-DCMAKE_INSTALL_PREFIX=${QPL_PREFIX}")
-  set_urls(ARROW_GTEST_SOURCE_URL
-           "https://github.com/google/googletest/archive/release-${ARROW_GTEST_BUILD_VERSION}.tar.gz"
-  )
-  set(QPL_GTEST_DIR
-      "${CMAKE_CURRENT_BINARY_DIR}/qpl_ep-prefix/src/qpl_ep/tools/third-party/google-test/"
-  )
-  set(QPL_PATCH_COMMAND
-      wget ${ARROW_GTEST_SOURCE_URL} && tar -zxvf
-      release-${ARROW_GTEST_BUILD_VERSION}.tar.gz --strip-components 1 -C
-      ${QPL_GTEST_DIR})
+  set(QPL_PATCH_COMMAND)
+  find_package(Patch)
+  if(Patch_FOUND)
+    # This patch is for Qpl <= v0.2.0
+    set(QPL_PATCH_COMMAND
+        ${Patch_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/qpl_ep-prefix/src/qpl_ep/tools/CMakeLists.txt"
+        "${CMAKE_SOURCE_DIR}/build-support/qpl-tools-cmakefile.patch")
+  endif()
 
   externalproject_add(qpl_ep
                       ${EP_LOG_OPTIONS}
