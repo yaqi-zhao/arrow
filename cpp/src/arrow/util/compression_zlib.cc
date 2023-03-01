@@ -331,6 +331,7 @@ class GZipCodec : public Codec {
     memset(&stream_, 0, sizeof(stream_));
 
     int ret;
+    
     // Initialize to run specified format
     int window_bits = CompressionWindowBitsForFormat(format_);
     if ((ret = deflateInit2(&stream_, Z_DEFAULT_COMPRESSION, Z_DEFLATED, window_bits,

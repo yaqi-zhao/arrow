@@ -88,6 +88,8 @@ ARROW_ZLIB_BUILD_VERSION=1.2.11
 ARROW_ZLIB_BUILD_SHA256_CHECKSUM=c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1
 ARROW_ZSTD_BUILD_VERSION=v1.5.0
 ARROW_ZSTD_BUILD_SHA256_CHECKSUM=0d9ade222c64e912d6957b11c923e214e2e010a18f39bec102f572e693ba2867
+ARROW_QPL_BUILD_VERSION=v0.2.1
+ARROW_QPL_BUILD_SHA256_CHECKSUM=129c1c8754139ea9a7b92f4c92b9d3d09068a32b03b8c0dd551379574b0e970d
 
 
 # The first field is the name of the environment variable expected by cmake.
@@ -117,6 +119,7 @@ DEPENDENCIES=(
   "ARROW_NLOHMANN_JSON_URL nlohmann-json-${ARROW_NLOHMANN_JSON_BUILD_VERSION}.tar.gz https://github.com/nlohmann/json/archive/refs/tags/${ARROW_NLOHMANN_JSON_BUILD_VERSION}.tar.gz"
   "ARROW_ORC_URL orc-${ARROW_ORC_BUILD_VERSION}.tar.gz https://github.com/apache/orc/archive/rel/release-${ARROW_ORC_BUILD_VERSION}.tar.gz"
   "ARROW_PROTOBUF_URL protobuf-${ARROW_PROTOBUF_BUILD_VERSION}.tar.gz https://github.com/google/protobuf/releases/download/${ARROW_PROTOBUF_BUILD_VERSION}/protobuf-all-${ARROW_PROTOBUF_BUILD_VERSION:1}.tar.gz"
+  "ARROW_QPL_URL qpl-${ARROW_QPL_BUILD_VERSION}.tar.gz https://github.com/intel/qpl/archive/refs/tags/${ARROW_QPL_BUILD_VERSION}.tar.gz"
   "ARROW_RAPIDJSON_URL rapidjson-${ARROW_RAPIDJSON_BUILD_VERSION}.tar.gz https://github.com/miloyip/rapidjson/archive/${ARROW_RAPIDJSON_BUILD_VERSION}.tar.gz"
   "ARROW_RE2_URL re2-${ARROW_RE2_BUILD_VERSION}.tar.gz https://github.com/google/re2/archive/${ARROW_RE2_BUILD_VERSION}.tar.gz"
   "ARROW_SNAPPY_URL snappy-${ARROW_SNAPPY_BUILD_VERSION}.tar.gz https://github.com/google/snappy/archive/${ARROW_SNAPPY_BUILD_VERSION}.tar.gz"

@@ -296,6 +296,12 @@ if(ARROW_WITH_ZLIB)
   list(APPEND ARROW_SRCS util/compression_zlib.cc)
 endif()
 
+if(ARROW_WITH_QPL)
+  add_definitions(-DARROW_WITH_QPL)
+  list(APPEND ARROW_SRCS util/compression_qpl.cc)
+endif()
+
+
 if(ARROW_WITH_ZSTD)
   add_definitions(-DARROW_WITH_ZSTD)
   list(APPEND ARROW_SRCS util/compression_zstd.cc)

@@ -376,6 +376,8 @@ if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
   define_option(ARROW_WITH_ZLIB "Build with zlib compression" OFF)
   define_option(ARROW_WITH_ZSTD "Build with zstd compression" OFF)
 
+  define_option(ARROW_WITH_QPL "Enable Intel® Query Processing Library" OFF)
+
   define_option(ARROW_WITH_UTF8PROC
                 "Build with support for Unicode properties using the utf8proc library;(only used if ARROW_COMPUTE is ON or ARROW_GANDIVA is ON)"
                 ON)

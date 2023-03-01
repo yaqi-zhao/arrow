@@ -48,8 +48,10 @@ struct Compression {
     LZ4,
     LZ4_FRAME,
     LZO,
+    QPL,
     BZ2,
-    LZ4_HADOOP
+    LZ4_HADOOP,
+    FASTPFOR,
   };
 };
 

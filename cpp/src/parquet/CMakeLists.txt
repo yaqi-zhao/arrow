@@ -412,3 +412,7 @@ endif()
 if(ARROW_CSV)
   add_definitions(-DARROW_CSV)
 endif()
+
+if(ARROW_WITH_QPL)
+  add_definitions(-DARROW_WITH_QPL)
+endif()
