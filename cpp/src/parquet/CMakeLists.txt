@@ -408,3 +408,7 @@ endif()
 if(ARROW_WITH_ZSTD)
   add_definitions(-DARROW_WITH_ZSTD)
 endif()
+
+if(ARROW_WITH_QPL)
+  add_definitions(-DARROW_WITH_QPL)
+endif()

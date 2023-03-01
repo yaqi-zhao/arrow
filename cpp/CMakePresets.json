@@ -80,7 +80,8 @@
         "ARROW_WITH_SNAPPY": "ON",
         "ARROW_WITH_UTF8PROC": "ON",
         "ARROW_WITH_ZLIB": "ON",
-        "ARROW_WITH_ZSTD": "ON"
+        "ARROW_WITH_ZSTD": "ON",
+        "ARROW_WITH_QPL":  "ON"
       }
     },
     {

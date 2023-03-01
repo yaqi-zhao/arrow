@@ -49,7 +49,7 @@ const std::string& Codec::GetCodecAsString(Compression::type t) {
   static const std::string uncompressed = "uncompressed", snappy = "snappy",
                            gzip = "gzip", lzo = "lzo", brotli = "brotli",
                            lz4_raw = "lz4_raw", lz4 = "lz4", lz4_hadoop = "lz4_hadoop",
-                           zstd = "zstd", bz2 = "bz2", unknown = "unknown";
+                           zstd = "zstd", bz2 = "bz2", fastpfor = "fastpfor", qpl = "qpl", unknown = "unknown";
 
   switch (t) {
     case Compression::UNCOMPRESSED:
@@ -72,6 +72,10 @@ const std::string& Codec::GetCodecAsString(Compression::type t) {
       return zstd;
     case Compression::BZ2:
       return bz2;
+    case Compression::FASTPFOR:
+      return fastpfor;
+    case Compression::QPL:
+      return qpl;
     default:
       return unknown;
   }
@@ -98,6 +102,10 @@ Result<Compression::type> Codec::GetCompressionType(const std::string& name) {
     return Compression::ZSTD;
   } else if (name == "bz2") {
     return Compression::BZ2;
+  } else if (name == "fastpfor") {
+    return Compression::FASTPFOR;
+  } else if (name == "qpl") {
+    return Compression::QPL;
   } else {
     return Status::Invalid("Unrecognized compression type: ", name);
   }
@@ -111,6 +119,7 @@ bool Codec::SupportsCompressionLevel(Compression::type codec) {
     case Compression::BZ2:
     case Compression::LZ4_FRAME:
     case Compression::LZ4:
+    case Compression::QPL:
       return true;
     default:
       return false;
@@ -201,6 +210,11 @@ Result<std::unique_ptr<Codec>> Codec::Create(Compression::type codec_type,
       codec = internal::MakeBZ2Codec(compression_level);
 #endif
       break;
+    case Compression::QPL:
+#ifdef ARROW_WITH_QPL
+      codec = internal::MakeQplCodec(compression_level);
+#endif
+      break;
     default:
       break;
   }
@@ -250,6 +264,18 @@ bool Codec::IsAvailable(Compression::type codec_type) {
 #endif
     case Compression::BZ2:
 #ifdef ARROW_WITH_BZ2
+      return true;
+#else
+      return false;
+#endif
+    case Compression::FASTPFOR:
+#ifdef ARROW_WITH_FASTPFOR
+      return true;
+#else
+      return false;
+#endif
+    case Compression::QPL:
+#ifdef ARROW_WITH_QPL
       return true;
 #else
       return false;

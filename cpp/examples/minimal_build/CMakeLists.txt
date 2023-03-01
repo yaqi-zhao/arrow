@@ -22,6 +22,7 @@ project(ArrowMinimalExample)
 option(ARROW_LINK_SHARED "Link to the Arrow shared library" ON)
 
 find_package(Arrow REQUIRED)
+#find_package(Parquet REQUIRED)
 
 if(NOT DEFINED CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 11)
@@ -29,16 +30,22 @@ endif()
 
 # We require a C++11 compliant compiler
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
+set (CMAKE_CXX_FLAGS "-O0 -g")
 if(NOT DEFINED CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Release)
+  set(CMAKE_BUILD_TYPE debug)
 endif()
 
 message(STATUS "Arrow version: ${ARROW_VERSION}")
 message(STATUS "Arrow SO version: ${ARROW_FULL_SO_VERSION}")
 
 add_executable(arrow-example example.cc)
+find_package(Parquet CONFIG REQUIRED
+    PATHS /usr/local/lib/cmake/arrow
+    NO_DEFAULT_PATH
+)
 
+
+target_link_libraries(arrow-example PRIVATE parquet_shared)
 if(ARROW_LINK_SHARED)
   target_link_libraries(arrow-example PRIVATE arrow_shared)
 else()
