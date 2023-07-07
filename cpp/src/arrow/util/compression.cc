@@ -168,11 +168,14 @@ Result<std::unique_ptr<Codec>> Codec::Create(Compression::type codec_type,
 #endif
       break;
     case Compression::GZIP: {
+// #ifdef ARROW_WITH_QPL
+//       codec = internal::MakeQplCodec(compression_level);
+// #endif      
 #ifdef ARROW_WITH_ZLIB
       auto opt = dynamic_cast<const GZipCodecOptions*>(&codec_options);
       codec = internal::MakeGZipCodec(compression_level,
                                       opt ? opt->gzip_format : GZipFormat::GZIP,
-                                      opt ? opt->window_bits : std::nullopt);
+                                      12);
 #endif
       break;
     }

@@ -391,7 +391,8 @@ takes precedence over ccache if a storage backend is configured" ON)
                 ARROW_JSON)
 
   define_option(ARROW_S3 "Build Arrow with S3 support (requires the AWS SDK for C++)" OFF)
-
+  define_option(ARROW_WITH_QPL "Enable Intel® Query Processing Library" ON)
+  
   define_option(ARROW_SKYHOOK
                 "Build the Skyhook libraries"
                 OFF

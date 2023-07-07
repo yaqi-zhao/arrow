@@ -305,6 +305,11 @@ if(ARROW_WITH_LZ4)
   list(APPEND ARROW_SRCS util/compression_lz4.cc)
 endif()
 
+if(ARROW_WITH_QPL)
+  add_definitions(-DARROW_WITH_QPL)
+  list(APPEND ARROW_SRCS util/compression_qpl.cc)
+endif()
+
 if(ARROW_WITH_OPENTELEMETRY)
   list(APPEND ARROW_SRCS util/tracing_internal.cc)
 endif()

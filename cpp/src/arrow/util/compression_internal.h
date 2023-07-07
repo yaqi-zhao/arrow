@@ -45,10 +45,22 @@ std::unique_ptr<Codec> MakeBZ2Codec(int compression_level = kBZ2DefaultCompressi
 
 // GZip
 constexpr int kGZipDefaultCompressionLevel = 9;
+constexpr int kQplDefaultCompressionLevel = 1;
+
+struct qpl_path{
+  enum type{
+    AUTO,
+    HARDWARE,
+    SOFTWARE
+  };
+};
 
 std::unique_ptr<Codec> MakeGZipCodec(int compression_level = kGZipDefaultCompressionLevel,
                                      GZipFormat format = GZipFormat::GZIP,
-                                     std::optional<int> window_bits = std::nullopt);
+                                     std::optional<int> window_bits = 12);
+
+std::unique_ptr<Codec> MakeQplCodec(int compression_level = kQplDefaultCompressionLevel,
+                                    qpl_path::type epath = qpl_path::SOFTWARE );
 
 // Snappy
 std::unique_ptr<Codec> MakeSnappyCodec();

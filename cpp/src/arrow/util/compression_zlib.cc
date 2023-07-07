@@ -50,7 +50,7 @@ constexpr int kGZipMaxWindowBits = 15;
 constexpr int kGZipMinWindowBits = 9;
 
 // Default window size
-constexpr int kGZipDefaultWindowBits = 15;
+constexpr int kGZipDefaultWindowBits = 12;
 
 // Output Gzip.
 constexpr int GZIP_CODEC = 16;

@@ -69,6 +69,7 @@ set(ARROW_THIRDPARTY_DEPENDENCIES
     Substrait
     Thrift
     ucx
+    Qpl
     utf8proc
     xsimd
     ZLIB
@@ -172,6 +173,8 @@ macro(build_dependency DEPENDENCY_NAME)
     build_glog()
   elseif("${DEPENDENCY_NAME}" STREQUAL "google_cloud_cpp_storage")
     build_google_cloud_cpp_storage()
+  elseif("${DEPENDENCY_NAME}" STREQUAL "Qpl")
+    build_qpl()    
   elseif("${DEPENDENCY_NAME}" STREQUAL "gRPC")
     build_grpc()
   elseif("${DEPENDENCY_NAME}" STREQUAL "GTest")
@@ -591,6 +594,14 @@ if(DEFINED ENV{ARROW_CRC32C_URL})
 else()
   set_urls(CRC32C_SOURCE_URL
            "https://github.com/google/crc32c/archive/${ARROW_CRC32C_BUILD_VERSION}.tar.gz"
+  )
+endif()
+
+if(DEFINED ENV{ARROW_QPL_URL})
+  set(QPL_SOURCE_URL "$ENV{ARROW_QPL_URL}")
+else()
+  set_urls(QPL_SOURCE_URL
+           "https://github.com/intel/qpl/archive/refs/tags/${ARROW_QPL_BUILD_VERSION}.tar.gz"
   )
 endif()
 
@@ -2245,6 +2256,63 @@ if(ARROW_BUILD_BENCHMARKS)
                      ${BENCHMARK_REQUIRED_VERSION}
                      IS_RUNTIME_DEPENDENCY
                      FALSE)
+endif()
+
+macro(build_qpl)
+ message(STATUS "Building QPL from source")
+  set(QPL_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/qpl_ep/src/qpl_ep-install")
+  set(QPL_STATIC_LIB_NAME ${CMAKE_STATIC_LIBRARY_PREFIX}qpl${CMAKE_STATIC_LIBRARY_SUFFIX})
+  set(QPL_STATIC_LIB "${QPL_PREFIX}/lib/${QPL_STATIC_LIB_NAME}")
+
+  set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -ldl -laccel-config -L/usr/lib64")  
+
+  set(QPL_CMAKE_ARGS ${EP_COMMON_CMAKE_ARGS}
+    -DCMAKE_BUILD_TYPE=Release
+    -DCMAKE_INSTALL_LIBDIR=${QPL_PREFIX}/lib
+    -DCMAKE_INSTALL_PREFIX=${QPL_PREFIX}
+    -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
+    -DEFFICIENT_WAIT=ON)
+
+  set(QPL_PATCH_COMMAND
+      "sed" "-i" "18,25d"
+      "${CMAKE_CURRENT_BINARY_DIR}/qpl_ep-prefix/src/qpl_ep/tools/CMakeLists.txt" && 
+      "sed" "-i" "87,88d"
+      "${CMAKE_CURRENT_BINARY_DIR}/qpl_ep-prefix/src/qpl_ep/CMakeLists.txt")
+
+  externalproject_add(qpl_ep
+                      ${EP_LOG_OPTIONS}
+                      URL https://github.com/intel/qpl/archive/refs/tags/v1.0.0.tar.gz
+                      PATCH_COMMAND ${QPL_PATCH_COMMAND}
+                      BUILD_BYPRODUCTS "${QPL_STATIC_LIB}"
+                      CMAKE_ARGS ${QPL_CMAKE_ARGS})
+
+
+  add_library(Qpl::qpl STATIC IMPORTED GLOBAL)
+  set(QPL_LIBRARIES ${QPL_STATIC_LIB})
+  set(QPL_INCLUDE_DIRS "${QPL_PREFIX}/include")
+  file(MAKE_DIRECTORY "${QPL_PREFIX}/include")
+  target_link_libraries(Qpl::qpl INTERFACE /usr/lib64/libaccel-config.so)
+  set_target_properties(Qpl::qpl
+                        PROPERTIES IMPORTED_LOCATION ${QPL_LIBRARIES}
+                                   INTERFACE_INCLUDE_DIRECTORIES ${QPL_INCLUDE_DIRS})
+  add_dependencies(toolchain qpl_ep)
+  add_dependencies(Qpl::qpl qpl_ep)
+
+
+  list(APPEND ARROW_BUNDLED_STATIC_LIBS Qpl::qpl)
+endmacro()
+
+
+
+if(ARROW_WITH_QPL)
+  resolve_dependency(Qpl PC_PACKAGE_NAMES qpl)
+  if(${Qpl_SOURCE} STREQUAL "SYSTEM")
+    get_target_property(QPL_LIB Qpl::qpl IMPORTED_LOCATION)
+    string(APPEND ARROW_PC_LIBS_PRIVATE " ${QPL_LIB}")
+  endif()
+  # TODO: Don't use global includes but rather target_include_directories
+  get_target_property(QPL_INCLUDE_DIRS Qpl::qpl INTERFACE_INCLUDE_DIRECTORIES)
+  include_directories(SYSTEM ${QPL_INCLUDE_DIRS})  
 endif()
 
 macro(build_rapidjson)
