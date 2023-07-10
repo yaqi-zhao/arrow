@@ -175,7 +175,7 @@ Result<std::unique_ptr<Codec>> Codec::Create(Compression::type codec_type,
       auto opt = dynamic_cast<const GZipCodecOptions*>(&codec_options);
       codec = internal::MakeGZipCodec(compression_level,
                                       opt ? opt->gzip_format : GZipFormat::GZIP,
-                                      12);
+                                      opt ? opt->window_bits : std::nullopt);
 #endif
       break;
     }

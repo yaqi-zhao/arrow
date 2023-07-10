@@ -57,7 +57,7 @@ struct qpl_path{
 
 std::unique_ptr<Codec> MakeGZipCodec(int compression_level = kGZipDefaultCompressionLevel,
                                      GZipFormat format = GZipFormat::GZIP,
-                                     std::optional<int> window_bits = 12);
+                                     std::optional<int> window_bits=15);
 
 std::unique_ptr<Codec> MakeQplCodec(int compression_level = kQplDefaultCompressionLevel,
                                     qpl_path::type epath = qpl_path::SOFTWARE );
